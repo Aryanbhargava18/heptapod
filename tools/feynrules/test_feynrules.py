@@ -20,6 +20,7 @@ Tests cover:
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -41,17 +42,20 @@ from tools.feynrules import FeynRulesToUFOTool
 
 # Try to import config for configuration
 try:
-    from config import feynrules_path, wolframscript_path
-    # Check if paths are still at default placeholder values
-    config_is_incomplete = (
-        feynrules_path == "/path/to/FeynRules" or
-        wolframscript_path == "/path/to/wolframscript"
-    )
+    # Paths come from the resolver, not from config.py directly: config.py is
+    # gitignored, so on any clone but the one where somebody filled it in it
+    # holds config.example.py's placeholders and every live test "fails" for
+    # want of configuration. The resolver reads the environment first, then a
+    # real config.py, then toolbase -- which already stores these paths for
+    # this toolkit and keeps them out of the repository by construction.
+    from config_resolve import resolve_path
+    feynrules_path = resolve_path("feynrules_path")
+    wolframscript_path = resolve_path("wolframscript_path")
+    config_is_incomplete = not (feynrules_path and wolframscript_path)
 except ImportError:
-    # Fallback to environment variables if config doesn't exist
-    feynrules_path = os.environ.get("FEYNRULES_PATH", "/usr/local/FeynRules")
-    wolframscript_path = os.environ.get("WOLFRAMSCRIPT_PATH", "wolframscript")
-    config_is_incomplete = False  # Using env vars or defaults is acceptable
+    feynrules_path = os.environ.get("FEYNRULES_PATH")
+    wolframscript_path = os.environ.get("WOLFRAMSCRIPT_PATH")
+    config_is_incomplete = not (feynrules_path and wolframscript_path)
 
 # Initialize base directory
 base_directory = str(FEYNRULES_DIR / "test_files")
@@ -216,6 +220,10 @@ def test_ufo_generation(verbose=False):
         feynrules_path=feynrules_path,
         wolframscript_path=wolframscript_path,
         model_path=model_path,
+        # Required, and never inferred: this fixture happens to name its BSM
+        # Lagrangian LBSM, which is a property of this model and not a
+        # convention. Omitting it makes the tool report the model's symbols.
+        lagrangian="LSM + LBSM",
         output_dir=output_dir,
         timeout_sec=600  # 10 minutes
     )
@@ -280,6 +288,157 @@ def test_ufo_generation(verbose=False):
 # Cleanup Functions
 # ============================================================================
 
+def test_check_verdict_parsing():
+    """Test consistency-check verdict parsing (no Mathematica required)."""
+    print(">> Testing consistency-check verdict parsing...\n")
+
+    from tools.feynrules.lagrangian_checks import (
+        parse_check_verdicts, failed_checks, summarise, FAIL, INCONCLUSIVE,
+        DEFAULT_CHECKS, OPTIONAL_CHECKS, CHECK_ORDER,
+    )
+
+    # Test 0: the checks that run by default are the ones that pass for the
+    # Standard Model alone. The other two fail for the SM itself -- the R_xi
+    # gauge-Goldstone term and the massless neutrinos -- so they would fail for
+    # every model built on it and are opt-in.
+    assert set(DEFAULT_CHECKS) | set(OPTIONAL_CHECKS) == set(CHECK_ORDER)
+    assert "quadratic_diagonal" in OPTIONAL_CHECKS
+    assert "kinetic_norm" in OPTIONAL_CHECKS
+    assert "hermiticity" in DEFAULT_CHECKS
+    print("[\u2713] Test 0 passed: SM-failing checks are excluded by default")
+
+    def line(scope, name, verdict, detail=""):
+        return f"HEPTAPOD-CHECK|scope={scope}|name={name}|verdict={verdict}|detail={detail}"
+
+    # Test 1: a verdict is three-valued; "not pass" is never reported as passed.
+    res = parse_check_verdicts("\n".join([
+        line("model", "hermiticity", "pass"),
+        line("model", "mass_diagonal", "inconclusive"),
+    ]))
+    by_name = {r["name"]: r for r in res}
+    assert by_name["hermiticity"]["passed"] is True
+    assert by_name["mass_diagonal"]["verdict"] == INCONCLUSIVE
+    assert by_name["mass_diagonal"]["passed"] is False
+    print("[\u2713] Test 1 passed: inconclusive is not reported as a pass")
+
+    # Test 2: results the SM baseline shares are marked inherited rather than
+    # blamed on the model. CheckDiagonalQuadraticTerms trips on the SM's own
+    # gauge-Goldstone mixing term, so without this every SM extension would
+    # report a failure it did nothing to cause.
+    both = "\n".join([
+        line("baseline", "quadratic_diagonal", "fail", "GP W mixing"),
+        line("model", "quadratic_diagonal", "fail", "GP W mixing"),
+    ])
+    res = parse_check_verdicts(both)
+    assert res[0]["pre_existing"] is True
+    assert failed_checks(res) == []
+    assert failed_checks(res, include_pre_existing=True) != []
+    print("[\u2713] Test 2 passed: SM-inherited failures are not model failures")
+
+    # Test 3: a failure the SM baseline does not share still surfaces, with a
+    # message that says what to do about it.
+    res = parse_check_verdicts("\n".join([
+        line("baseline", "hermiticity", "pass"),
+        line("model", "hermiticity", "fail", "2 residual terms"),
+    ]))
+    assert [r["name"] for r in failed_checks(res)] == ["hermiticity"]
+    assert "HC[" in res[0]["message"]
+    print("[\u2713] Test 3 passed: a model-introduced failure is reported")
+
+    # Test 4: CheckKineticTermNormalisation returns Null on failure rather than
+    # False, so an undecided verdict becomes a failure only when the kinetic
+    # terms are diagonal and the SM baseline does not share the result.
+    res = parse_check_verdicts("\n".join([
+        line("model", "kinetic_diagonal", "pass"),
+        line("model", "kinetic_norm", "inconclusive"),
+    ]))
+    assert {r["name"]: r["verdict"] for r in res}["kinetic_norm"] == FAIL
+    res = parse_check_verdicts("\n".join([
+        line("baseline", "kinetic_diagonal", "pass"),
+        line("baseline", "kinetic_norm", "inconclusive"),
+        line("model", "kinetic_diagonal", "pass"),
+        line("model", "kinetic_norm", "inconclusive"),
+    ]))
+    assert {r["name"]: r["verdict"] for r in res}["kinetic_norm"] == INCONCLUSIVE
+    print("[\u2713] Test 4 passed: kinetic-normalisation Null resolved correctly")
+
+    # Test 5: output from a generator predating the scope field still parses.
+    res = parse_check_verdicts(
+        "HEPTAPOD-CHECK|name=hermiticity|verdict=pass|detail=")
+    assert len(res) == 1 and res[0]["passed"] is True
+    print("[\u2713] Test 5 passed: scope-less verdict lines still parse")
+
+    # Test 6: the summary counts inherited results separately.
+    assert "inherited" in summarise(parse_check_verdicts(both))
+    assert summarise([]) == "no checks run"
+    print("[\u2713] Test 6 passed: summary distinguishes inherited results")
+
+    print("\nAll verdict parsing tests passed! [\u2713]\n")
+
+
+def test_lagrangian_is_not_guessed(verbose=False):
+    """Test that a model naming its Lagrangian differently fails loudly.
+
+    Regression test for the failure this replaced: the generator hardcoded
+    `LSM + LBSM`, so a model calling its Lagrangian anything else produced a UFO
+    directory of boilerplate -- no particles.py, no vertices.py, no couplings.py
+    -- and still reported success with exit code 0.
+    """
+    print(">> Testing that the Lagrangian name is never guessed...\n")
+
+    if config_is_incomplete:
+        print("[i] Skipped: feynrules_path/wolframscript_path not configured\n")
+        return None
+
+    from tools.feynrules.wl_probe import wolframscript_activated
+    if not wolframscript_activated(wolframscript_path):
+        print("[i] Skipped: wolframscript is not installed or not activated\n")
+        return None
+
+    source = FEYNRULES_DIR / "test_files" / "models" / "S1_LQ_RR.fr"
+    if not source.exists():
+        print(f"[i] Skipped: fixture not found: {source}\n")
+        return None
+
+    # Derived at test time rather than committed: all that matters is a model
+    # whose Lagrangian is called something the tool has never heard of.
+    work = Path(base_directory) / "test_lagrangian_naming"
+    work.mkdir(parents=True, exist_ok=True)
+    renamed = work / "S1_LQ_RR_renamed.fr"
+    renamed.write_text(re.sub(r"\bLBSM\b", "LNP", source.read_text()))
+
+    tool = FeynRulesToUFOTool(
+        base_directory=base_directory,
+        feynrules_path=feynrules_path,
+        wolframscript_path=wolframscript_path,
+        model_path=str(renamed),
+        output_dir=str(work / "UFO_out"),
+        run_checks=False,
+    )
+    raw = tool._run()
+
+    # A failing tool returns BaseTool.format_error(), which is formatted text
+    # rather than JSON, so the result has to be read both ways.
+    try:
+        result = json.loads(raw)
+        succeeded = result.get("ok") is True
+        reported = json.dumps(result)
+    except json.JSONDecodeError:
+        succeeded = False
+        reported = raw
+
+    assert not succeeded, f"a misnamed Lagrangian must not succeed: {reported}"
+    assert "LNP" in reported, (
+        f"the error should name the symbols the model defines: {reported}")
+    print("[\u2713] Test 1 passed: missing Lagrangian fails and lists candidates")
+
+    if not args.keep_files:
+        shutil.rmtree(work, ignore_errors=True)
+
+    print("\nAll Lagrangian naming tests passed! [\u2713]\n")
+    return True
+
+
 def cleanup_test_files():
     """Remove all test-generated files and directories."""
     print("\n>> Cleaning up test files...\n")
@@ -339,21 +498,43 @@ if __name__ == "__main__":
         print(f"\n[✗] test_path_resolution failed: {e}\n")
         all_passed = False
 
+    try:
+        test_check_verdict_parsing()
+    except (AssertionError, Exception) as e:
+        print(f"\n[✗] test_check_verdict_parsing failed: {e}\n")
+        all_passed = False
+
+    # Needs a real FeynRules + activated Wolfram; returns None when skipped.
+    try:
+        if test_lagrangian_is_not_guessed(verbose=args.verbose) is False:
+            all_passed = False
+    except (AssertionError, Exception) as e:
+        print(f"\n[✗] test_lagrangian_is_not_guessed failed: {e}\n")
+        all_passed = False
+
     ufo_result = test_ufo_generation(verbose=args.verbose)
     # Note: UFO generation test can be skipped if dependencies not available
     # ufo_result: True = passed, False = failed, None = skipped
     if ufo_result is False:
         all_passed = False
     elif ufo_result is None and config_is_incomplete:
-        # If test was skipped due to incomplete config, fail the overall suite
-        missing_paths = []
-        if feynrules_path == "/path/to/FeynRules":
-            missing_paths.append("feynrules_path")
-        if wolframscript_path == "/path/to/wolframscript":
-            missing_paths.append("wolframscript_path")
-        print(f"[✗] Test suite failed: {' and '.join(missing_paths)} not configured in config.py")
-        print(f"    Please set the correct path(s) in config.py\n")
-        all_passed = False
+        # SKIP, not fail. The live tests need a FeynRules and a Wolfram install
+        # that a clone cannot assume; every test that does not need them has
+        # already run and reported. Failing here made a fresh checkout red on
+        # arrival, which trains people to ignore the suite -- and this one hid
+        # three real breakages behind that red.
+        missing = [k for k, v in (("feynrules_path", feynrules_path),
+                                  ("wolframscript_path", wolframscript_path))
+                   if not v]
+        print(f"[i] Live UFO tests SKIPPED: no {' or '.join(missing)}.")
+        try:
+            from config_resolve import describe_sources
+            print("    Resolution:")
+            print(describe_sources())
+        except Exception:
+            pass
+        print("    Set one of: the environment variable, config.py, or")
+        print("    `tb config set heptapod <key> <path>`.\n")
 
     # Cleanup test files unless --keep-files flag is set
     if not args.keep_files:

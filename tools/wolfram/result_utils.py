@@ -4,12 +4,12 @@
 # HEPTAPOD is licensed under the GNU GPL v3 or later, see LICENSE for details.
 # Please respect the MCnet Guidelines, see GUIDELINES for details.
 
-Shared utilities for loading expressions from RunWolframScript result sidecars.
+Loading expressions back out of RunWolframScript result sidecars.
 
 The _results.json sidecar is saved alongside each .wl script by WolframRunner
 and contains parsed SYMBOLIC_RESULT / NUMERICAL_RESULT / LATEX_RESULT values.
-Both ConvertToPython and SimplifyResult use this module to load expressions
-by reference (script_path + result_name).
+This is how a downstream tool refers to an earlier result by reference
+(script_path + result_name) instead of having it pasted back in.
 """
 
 import json
@@ -26,7 +26,8 @@ def load_expression_from_sidecar(
 
     Args:
         script_path: Path to the .wl script file.
-        result_name: Key of the result to load (e.g., "width", "ampSq").
+        result_name: Key of the result to load, i.e. the NAME in the
+                  script's Print["SYMBOLIC_RESULT[NAME]: ", ...] marker.
         category: Which result category to search — "symbolic" (default),
                   "numerical", or "latex".
 
@@ -63,7 +64,7 @@ def load_expression_from_sidecar(
     if value.startswith("InputForm[") and value.endswith("]"):
         value = value[len("InputForm["):-1]
 
-    # Guard against $Failed — this is a Mathematica error symbol that propagates
+    # Guard against $Failed — this is a Wolfram error symbol that propagates
     # silently through arithmetic (e.g. $Failed - $Failed simplifies to 0).
     if value.strip() == "$Failed" or value.strip() == "Null":
         return None, (

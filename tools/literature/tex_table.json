@@ -1,0 +1,1315 @@
+{
+"delim_kinds": [
+"(",
+"[",
+"\\{",
+"|",
+"\\|",
+"\\langle"
+],
+"delims": {
+"CMEX\u0000\u0001": {
+"kind": 0,
+"side": "right"
+},
+"CMEX\u0000\b": {
+"kind": 2,
+"side": "left"
+},
+"CMEX\u0000\t": {
+"kind": 2,
+"side": "right"
+},
+"CMEX\u0000\n": {
+"kind": 5,
+"side": "left"
+},
+"CMEX\u0000\u000b": {
+"kind": 5,
+"side": "right"
+},
+"CMEX\u0000\f": {
+"kind": 3,
+"side": "both"
+},
+"CMEX\u0000\r": {
+"kind": 4,
+"side": "both"
+},
+"CMEX\u0000\u0010": {
+"kind": 0,
+"side": "left"
+},
+"CMEX\u0000\u0011": {
+"kind": 0,
+"side": "right"
+},
+"CMEX\u0000\u0012": {
+"kind": 0,
+"side": "left"
+},
+"CMEX\u0000\u0013": {
+"kind": 0,
+"side": "right"
+},
+"CMEX\u0000\u0014": {
+"kind": 1,
+"side": "left"
+},
+"CMEX\u0000\u0015": {
+"kind": 1,
+"side": "right"
+},
+"CMEX\u0000\u001a": {
+"kind": 2,
+"side": "left"
+},
+"CMEX\u0000\u001b": {
+"kind": 2,
+"side": "right"
+},
+"CMEX\u0000\u001c": {
+"kind": 5,
+"side": "left"
+},
+"CMEX\u0000\u001d": {
+"kind": 5,
+"side": "right"
+},
+"CMEX\u0000 ": {
+"kind": 0,
+"side": "left"
+},
+"CMEX\u0000!": {
+"kind": 0,
+"side": "right"
+},
+"CMEX\u0000\"": {
+"kind": 1,
+"side": "left"
+},
+"CMEX\u0000#": {
+"kind": 1,
+"side": "right"
+},
+"CMEX\u0000(": {
+"kind": 2,
+"side": "left"
+},
+"CMEX\u0000)": {
+"kind": 2,
+"side": "right"
+},
+"CMEX\u0000*": {
+"kind": 5,
+"side": "left"
+},
+"CMEX\u0000+": {
+"kind": 5,
+"side": "right"
+},
+"CMEX\u0000D": {
+"kind": 5,
+"side": "left"
+},
+"CMEX\u0000E": {
+"kind": 5,
+"side": "right"
+},
+"CMEX\u0000h": {
+"kind": 1,
+"side": "left"
+},
+"CMEX\u0000i": {
+"kind": 1,
+"side": "right"
+},
+"CMEX\u0000n": {
+"kind": 2,
+"side": "left"
+},
+"CMEX\u0000o": {
+"kind": 2,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 0,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 0,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 0,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 1,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 1,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 1,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 2,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 2,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 2,
+"side": "left"
+},
+"CMEX\u0000": {
+"kind": 2,
+"side": "both"
+},
+"CMEX\u0000": {
+"kind": 0,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 0,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 0,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 1,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 1,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 1,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 2,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 2,
+"side": "right"
+},
+"CMEX\u0000": {
+"kind": 2,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000\f": {
+"kind": 3,
+"side": "both"
+},
+"LMMathExtension-Regular\u0000\r": {
+"kind": 4,
+"side": "both"
+},
+"LMMathExtension-Regular\u0000\u0010": {
+"kind": 0,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000\u0011": {
+"kind": 0,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000\u0012": {
+"kind": 0,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000\u0013": {
+"kind": 0,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000\u0014": {
+"kind": 1,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000\u0015": {
+"kind": 1,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000\u001a": {
+"kind": 2,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000\u001b": {
+"kind": 2,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000\u001c": {
+"kind": 5,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000\u001d": {
+"kind": 5,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000 ": {
+"kind": 0,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000!": {
+"kind": 0,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000\"": {
+"kind": 1,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000#": {
+"kind": 1,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000(": {
+"kind": 2,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000)": {
+"kind": 2,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000*": {
+"kind": 5,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000+": {
+"kind": 5,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000D": {
+"kind": 5,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000E": {
+"kind": 5,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000h": {
+"kind": 1,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000i": {
+"kind": 1,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000n": {
+"kind": 2,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000o": {
+"kind": 2,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 0,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 0,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 0,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 1,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 1,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 1,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 2,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 2,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 2,
+"side": "left"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 2,
+"side": "both"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 0,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 0,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 0,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 1,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 1,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 1,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 2,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 2,
+"side": "right"
+},
+"LMMathExtension-Regular\u0000": {
+"kind": 2,
+"side": "right"
+},
+"txexs\u0000\u0001": {
+"kind": 0,
+"side": "right"
+},
+"txexs\u0000\b": {
+"kind": 2,
+"side": "left"
+},
+"txexs\u0000\t": {
+"kind": 2,
+"side": "right"
+},
+"txexs\u0000\n": {
+"kind": 5,
+"side": "left"
+},
+"txexs\u0000\u000b": {
+"kind": 5,
+"side": "right"
+},
+"txexs\u0000\f": {
+"kind": 3,
+"side": "both"
+},
+"txexs\u0000\r": {
+"kind": 4,
+"side": "both"
+},
+"txexs\u0000\u0010": {
+"kind": 0,
+"side": "left"
+},
+"txexs\u0000\u0011": {
+"kind": 0,
+"side": "right"
+},
+"txexs\u0000\u0012": {
+"kind": 0,
+"side": "left"
+},
+"txexs\u0000\u0013": {
+"kind": 0,
+"side": "right"
+},
+"txexs\u0000\u0014": {
+"kind": 1,
+"side": "left"
+},
+"txexs\u0000\u0015": {
+"kind": 1,
+"side": "right"
+},
+"txexs\u0000\u001a": {
+"kind": 2,
+"side": "left"
+},
+"txexs\u0000\u001b": {
+"kind": 2,
+"side": "right"
+},
+"txexs\u0000\u001c": {
+"kind": 5,
+"side": "left"
+},
+"txexs\u0000\u001d": {
+"kind": 5,
+"side": "right"
+},
+"txexs\u0000 ": {
+"kind": 0,
+"side": "left"
+},
+"txexs\u0000!": {
+"kind": 0,
+"side": "right"
+},
+"txexs\u0000\"": {
+"kind": 1,
+"side": "left"
+},
+"txexs\u0000#": {
+"kind": 1,
+"side": "right"
+},
+"txexs\u0000(": {
+"kind": 2,
+"side": "left"
+},
+"txexs\u0000)": {
+"kind": 2,
+"side": "right"
+},
+"txexs\u0000*": {
+"kind": 5,
+"side": "left"
+},
+"txexs\u0000+": {
+"kind": 5,
+"side": "right"
+},
+"txexs\u0000D": {
+"kind": 5,
+"side": "left"
+},
+"txexs\u0000E": {
+"kind": 5,
+"side": "right"
+},
+"txexs\u0000h": {
+"kind": 1,
+"side": "left"
+},
+"txexs\u0000i": {
+"kind": 1,
+"side": "right"
+},
+"txexs\u0000n": {
+"kind": 2,
+"side": "left"
+},
+"txexs\u0000o": {
+"kind": 2,
+"side": "right"
+},
+"txexs\u0000©": {
+"kind": 0,
+"side": "left"
+},
+"txexs\u0000ª": {
+"kind": 0,
+"side": "right"
+},
+"txexs\u0000«": {
+"kind": 0,
+"side": "left"
+},
+"txexs\u0000¬": {
+"kind": 0,
+"side": "right"
+},
+"txexs\u0000­": {
+"kind": 0,
+"side": "left"
+},
+"txexs\u0000®": {
+"kind": 0,
+"side": "right"
+},
+"txexs\u0000": {
+"kind": 1,
+"side": "left"
+},
+"txexs\u0000": {
+"kind": 1,
+"side": "left"
+},
+"txexs\u0000": {
+"kind": 1,
+"side": "left"
+},
+"txexs\u0000": {
+"kind": 2,
+"side": "left"
+},
+"txexs\u0000": {
+"kind": 2,
+"side": "left"
+},
+"txexs\u0000": {
+"kind": 2,
+"side": "left"
+},
+"txexs\u0000": {
+"kind": 2,
+"side": "both"
+},
+"txexs\u0000": {
+"kind": 1,
+"side": "right"
+},
+"txexs\u0000": {
+"kind": 1,
+"side": "right"
+},
+"txexs\u0000": {
+"kind": 1,
+"side": "right"
+},
+"txexs\u0000": {
+"kind": 2,
+"side": "right"
+},
+"txexs\u0000": {
+"kind": 2,
+"side": "right"
+},
+"txexs\u0000": {
+"kind": 2,
+"side": "right"
+}
+},
+"radicals": {
+"CMEX\u0000p": "sqrt",
+"CMEX\u0000q": "sqrt",
+"CMSY\u0000√": "sqrt",
+"LMMathExtension-Regular\u0000q": "sqrt",
+"LMMathSymbols-Regular\u0000√": "sqrt",
+"txsys\u0000√": "sqrt"
+},
+"symbols": {
+"CMEX\u0000H": "oint",
+"CMEX\u0000I": "oint",
+"CMEX\u0000L": "bigoplus",
+"CMEX\u0000M": "bigoplus",
+"CMEX\u0000N": "bigotimes",
+"CMEX\u0000O": "bigotimes",
+"CMEX\u0000P": "sum",
+"CMEX\u0000Q": "prod",
+"CMEX\u0000R": "int",
+"CMEX\u0000S": "bigcup",
+"CMEX\u0000T": "bigcap",
+"CMEX\u0000X": "sum",
+"CMEX\u0000Y": "prod",
+"CMEX\u0000Z": "int",
+"CMEX\u0000[": "bigcup",
+"CMEX\u0000\\": "bigcap",
+"CMEX\u0000`": "coprod",
+"CMEX\u0000a": "coprod",
+"CMMI\u0000A": "A",
+"CMMI\u0000B": "B",
+"CMMI\u0000C": "C",
+"CMMI\u0000D": "D",
+"CMMI\u0000E": "E",
+"CMMI\u0000F": "F",
+"CMMI\u0000G": "G",
+"CMMI\u0000H": "H",
+"CMMI\u0000I": "I",
+"CMMI\u0000J": "J",
+"CMMI\u0000K": "K",
+"CMMI\u0000L": "L",
+"CMMI\u0000M": "M",
+"CMMI\u0000N": "N",
+"CMMI\u0000O": "O",
+"CMMI\u0000P": "P",
+"CMMI\u0000Q": "Q",
+"CMMI\u0000R": "R",
+"CMMI\u0000S": "S",
+"CMMI\u0000T": "T",
+"CMMI\u0000U": "U",
+"CMMI\u0000V": "V",
+"CMMI\u0000W": "W",
+"CMMI\u0000X": "X",
+"CMMI\u0000Y": "Y",
+"CMMI\u0000Z": "Z",
+"CMMI\u0000a": "a",
+"CMMI\u0000b": "b",
+"CMMI\u0000c": "c",
+"CMMI\u0000d": "d",
+"CMMI\u0000e": "e",
+"CMMI\u0000f": "f",
+"CMMI\u0000g": "g",
+"CMMI\u0000h": "h",
+"CMMI\u0000i": "i",
+"CMMI\u0000j": "j",
+"CMMI\u0000k": "k",
+"CMMI\u0000l": "l",
+"CMMI\u0000m": "m",
+"CMMI\u0000n": "n",
+"CMMI\u0000o": "o",
+"CMMI\u0000p": "p",
+"CMMI\u0000q": "q",
+"CMMI\u0000r": "r",
+"CMMI\u0000s": "s",
+"CMMI\u0000t": "t",
+"CMMI\u0000u": "u",
+"CMMI\u0000v": "v",
+"CMMI\u0000w": "w",
+"CMMI\u0000x": "x",
+"CMMI\u0000y": "y",
+"CMMI\u0000z": "z",
+"CMMI\u0000µ": "mu",
+"CMMI\u0000ı": "imath",
+"CMMI\u0000ȷ": "jmath",
+"CMMI\u0000α": "alpha",
+"CMMI\u0000β": "beta",
+"CMMI\u0000γ": "gamma",
+"CMMI\u0000δ": "delta",
+"CMMI\u0000ε": "varepsilon",
+"CMMI\u0000ζ": "zeta",
+"CMMI\u0000η": "eta",
+"CMMI\u0000θ": "theta",
+"CMMI\u0000ι": "iota",
+"CMMI\u0000κ": "kappa",
+"CMMI\u0000λ": "lambda",
+"CMMI\u0000ν": "nu",
+"CMMI\u0000ξ": "xi",
+"CMMI\u0000π": "pi",
+"CMMI\u0000ρ": "rho",
+"CMMI\u0000ς": "varsigma",
+"CMMI\u0000σ": "sigma",
+"CMMI\u0000τ": "tau",
+"CMMI\u0000υ": "upsilon",
+"CMMI\u0000φ": "varphi",
+"CMMI\u0000χ": "chi",
+"CMMI\u0000ψ": "psi",
+"CMMI\u0000ω": "omega",
+"CMMI\u0000ϑ": "vartheta",
+"CMMI\u0000ϕ": "phi",
+"CMMI\u0000ϖ": "varpi",
+"CMMI\u0000ϱ": "varrho",
+"CMMI\u0000ϵ": "epsilon",
+"CMMI\u0000⃗x": "vec{x}",
+"CMMI\u0000ℓ": "ell",
+"CMMI\u0000℘": "wp",
+"CMMI\u0000⇀": "rightharpoonup",
+"CMMI\u0000∂": "partial",
+"CMMI\u0000⋆": "star",
+"CMMI\u0000♭": "flat",
+"CMMI\u0000♮": "natural",
+"CMMI\u0000♯": "sharp",
+"CMR\u0000Γ": "Gamma",
+"CMR\u0000Θ": "Theta",
+"CMR\u0000Λ": "Lambda",
+"CMR\u0000Ξ": "Xi",
+"CMR\u0000Π": "Pi",
+"CMR\u0000Σ": "Sigma",
+"CMR\u0000Υ": "Upsilon",
+"CMR\u0000Φ": "Phi",
+"CMR\u0000Ψ": "Psi",
+"CMR\u0000Ω": "Omega",
+"CMR\u0000∆": "Delta",
+"CMSY\u00007→": "mapsto",
+"CMSY\u0000A": "mathcal{A}",
+"CMSY\u0000B": "mathcal{B}",
+"CMSY\u0000C": "mathcal{C}",
+"CMSY\u0000D": "mathcal{D}",
+"CMSY\u0000E": "mathcal{E}",
+"CMSY\u0000F": "mathcal{F}",
+"CMSY\u0000G": "mathcal{G}",
+"CMSY\u0000H": "mathcal{H}",
+"CMSY\u0000I": "mathcal{I}",
+"CMSY\u0000J": "mathcal{J}",
+"CMSY\u0000K": "mathcal{K}",
+"CMSY\u0000L": "mathcal{L}",
+"CMSY\u0000M": "mathcal{M}",
+"CMSY\u0000N": "mathcal{N}",
+"CMSY\u0000O": "mathcal{O}",
+"CMSY\u0000P": "mathcal{P}",
+"CMSY\u0000Q": "mathcal{Q}",
+"CMSY\u0000R": "mathcal{R}",
+"CMSY\u0000S": "mathcal{S}",
+"CMSY\u0000T": "mathcal{T}",
+"CMSY\u0000U": "mathcal{U}",
+"CMSY\u0000V": "mathcal{V}",
+"CMSY\u0000W": "mathcal{W}",
+"CMSY\u0000X": "mathcal{X}",
+"CMSY\u0000Y": "mathcal{Y}",
+"CMSY\u0000Z": "mathcal{Z}",
+"CMSY\u0000\\": "setminus",
+"CMSY\u0000|": "mid",
+"CMSY\u0000¬": "neg",
+"CMSY\u0000±": "pm",
+"CMSY\u0000·": "cdot",
+"CMSY\u0000×": "times",
+"CMSY\u0000÷": "div",
+"CMSY\u0000†": "dagger",
+"CMSY\u0000‡": "ddagger",
+"CMSY\u0000•": "bullet",
+"CMSY\u0000′": "prime",
+"CMSY\u0000ℑ": "Im",
+"CMSY\u0000ℜ": "Re",
+"CMSY\u0000ℵ": "aleph",
+"CMSY\u0000←": "leftarrow",
+"CMSY\u0000→": "rightarrow",
+"CMSY\u0000↔": "leftrightarrow",
+"CMSY\u0000⇐": "Leftarrow",
+"CMSY\u0000⇒": "Rightarrow",
+"CMSY\u0000⇔": "Leftrightarrow",
+"CMSY\u0000∀": "forall",
+"CMSY\u0000∃": "exists",
+"CMSY\u0000∅": "emptyset",
+"CMSY\u0000∇": "nabla",
+"CMSY\u0000∈": "in",
+"CMSY\u0000∋": "ni",
+"CMSY\u0000−→": "longrightarrow",
+"CMSY\u0000∓": "mp",
+"CMSY\u0000∗": "ast",
+"CMSY\u0000√": "surd",
+"CMSY\u0000∝": "propto",
+"CMSY\u0000∞": "infty",
+"CMSY\u0000∥": "parallel",
+"CMSY\u0000∧": "wedge",
+"CMSY\u0000∨": "vee",
+"CMSY\u0000∩": "cap",
+"CMSY\u0000∪": "cup",
+"CMSY\u0000∼": "sim",
+"CMSY\u0000≃": "simeq",
+"CMSY\u0000≈": "approx",
+"CMSY\u0000≍": "asymp",
+"CMSY\u0000≡": "equiv",
+"CMSY\u0000≤": "leq",
+"CMSY\u0000≥": "geq",
+"CMSY\u0000≪": "ll",
+"CMSY\u0000≫": "gg",
+"CMSY\u0000≺": "prec",
+"CMSY\u0000≻": "succ",
+"CMSY\u0000⊂": "subset",
+"CMSY\u0000⊃": "supset",
+"CMSY\u0000⊆": "subseteq",
+"CMSY\u0000⊇": "supseteq",
+"CMSY\u0000⊕": "oplus",
+"CMSY\u0000⊖": "ominus",
+"CMSY\u0000⊗": "otimes",
+"CMSY\u0000⊘": "oslash",
+"CMSY\u0000⊙": "odot",
+"CMSY\u0000⊤": "top",
+"CMSY\u0000⊥": "perp",
+"CMSY\u0000◦": "circ",
+"CMSY\u0000⨿": "amalg",
+"LMMathExtension-Regular\u0000H": "oint",
+"LMMathExtension-Regular\u0000I": "oint",
+"LMMathExtension-Regular\u0000L": "bigoplus",
+"LMMathExtension-Regular\u0000M": "bigoplus",
+"LMMathExtension-Regular\u0000N": "bigotimes",
+"LMMathExtension-Regular\u0000O": "bigotimes",
+"LMMathExtension-Regular\u0000P": "sum",
+"LMMathExtension-Regular\u0000Q": "prod",
+"LMMathExtension-Regular\u0000R": "int",
+"LMMathExtension-Regular\u0000S": "bigcup",
+"LMMathExtension-Regular\u0000T": "bigcap",
+"LMMathExtension-Regular\u0000X": "sum",
+"LMMathExtension-Regular\u0000Y": "prod",
+"LMMathExtension-Regular\u0000Z": "int",
+"LMMathExtension-Regular\u0000[": "bigcup",
+"LMMathExtension-Regular\u0000\\": "bigcap",
+"LMMathExtension-Regular\u0000`": "coprod",
+"LMMathExtension-Regular\u0000a": "coprod",
+"LMMathItalic-Regular\u0000A": "A",
+"LMMathItalic-Regular\u0000B": "B",
+"LMMathItalic-Regular\u0000C": "C",
+"LMMathItalic-Regular\u0000D": "D",
+"LMMathItalic-Regular\u0000E": "E",
+"LMMathItalic-Regular\u0000F": "F",
+"LMMathItalic-Regular\u0000G": "G",
+"LMMathItalic-Regular\u0000H": "H",
+"LMMathItalic-Regular\u0000I": "I",
+"LMMathItalic-Regular\u0000J": "J",
+"LMMathItalic-Regular\u0000K": "K",
+"LMMathItalic-Regular\u0000L": "L",
+"LMMathItalic-Regular\u0000M": "M",
+"LMMathItalic-Regular\u0000N": "N",
+"LMMathItalic-Regular\u0000O": "O",
+"LMMathItalic-Regular\u0000P": "P",
+"LMMathItalic-Regular\u0000Q": "Q",
+"LMMathItalic-Regular\u0000R": "R",
+"LMMathItalic-Regular\u0000S": "S",
+"LMMathItalic-Regular\u0000T": "T",
+"LMMathItalic-Regular\u0000U": "U",
+"LMMathItalic-Regular\u0000V": "V",
+"LMMathItalic-Regular\u0000W": "W",
+"LMMathItalic-Regular\u0000X": "X",
+"LMMathItalic-Regular\u0000Y": "Y",
+"LMMathItalic-Regular\u0000Z": "Z",
+"LMMathItalic-Regular\u0000a": "a",
+"LMMathItalic-Regular\u0000b": "b",
+"LMMathItalic-Regular\u0000c": "c",
+"LMMathItalic-Regular\u0000d": "d",
+"LMMathItalic-Regular\u0000e": "e",
+"LMMathItalic-Regular\u0000f": "f",
+"LMMathItalic-Regular\u0000g": "g",
+"LMMathItalic-Regular\u0000h": "h",
+"LMMathItalic-Regular\u0000i": "i",
+"LMMathItalic-Regular\u0000j": "j",
+"LMMathItalic-Regular\u0000k": "k",
+"LMMathItalic-Regular\u0000l": "l",
+"LMMathItalic-Regular\u0000m": "m",
+"LMMathItalic-Regular\u0000n": "n",
+"LMMathItalic-Regular\u0000o": "o",
+"LMMathItalic-Regular\u0000p": "p",
+"LMMathItalic-Regular\u0000q": "q",
+"LMMathItalic-Regular\u0000r": "r",
+"LMMathItalic-Regular\u0000s": "s",
+"LMMathItalic-Regular\u0000t": "t",
+"LMMathItalic-Regular\u0000u": "u",
+"LMMathItalic-Regular\u0000v": "v",
+"LMMathItalic-Regular\u0000w": "w",
+"LMMathItalic-Regular\u0000x": "x",
+"LMMathItalic-Regular\u0000y": "y",
+"LMMathItalic-Regular\u0000z": "z",
+"LMMathItalic-Regular\u0000µ": "mu",
+"LMMathItalic-Regular\u0000ı": "imath",
+"LMMathItalic-Regular\u0000ȷ": "jmath",
+"LMMathItalic-Regular\u0000α": "alpha",
+"LMMathItalic-Regular\u0000β": "beta",
+"LMMathItalic-Regular\u0000γ": "gamma",
+"LMMathItalic-Regular\u0000δ": "delta",
+"LMMathItalic-Regular\u0000ε": "varepsilon",
+"LMMathItalic-Regular\u0000ζ": "zeta",
+"LMMathItalic-Regular\u0000η": "eta",
+"LMMathItalic-Regular\u0000θ": "theta",
+"LMMathItalic-Regular\u0000ι": "iota",
+"LMMathItalic-Regular\u0000κ": "kappa",
+"LMMathItalic-Regular\u0000λ": "lambda",
+"LMMathItalic-Regular\u0000ν": "nu",
+"LMMathItalic-Regular\u0000ξ": "xi",
+"LMMathItalic-Regular\u0000π": "pi",
+"LMMathItalic-Regular\u0000ρ": "rho",
+"LMMathItalic-Regular\u0000ς": "varsigma",
+"LMMathItalic-Regular\u0000σ": "sigma",
+"LMMathItalic-Regular\u0000τ": "tau",
+"LMMathItalic-Regular\u0000υ": "upsilon",
+"LMMathItalic-Regular\u0000φ": "varphi",
+"LMMathItalic-Regular\u0000χ": "chi",
+"LMMathItalic-Regular\u0000ψ": "psi",
+"LMMathItalic-Regular\u0000ω": "omega",
+"LMMathItalic-Regular\u0000ϑ": "vartheta",
+"LMMathItalic-Regular\u0000ϕ": "phi",
+"LMMathItalic-Regular\u0000ϖ": "varpi",
+"LMMathItalic-Regular\u0000ϱ": "varrho",
+"LMMathItalic-Regular\u0000ϵ": "epsilon",
+"LMMathItalic-Regular\u0000⃗x": "vec{x}",
+"LMMathItalic-Regular\u0000ℓ": "ell",
+"LMMathItalic-Regular\u0000℘": "wp",
+"LMMathItalic-Regular\u0000⇀": "rightharpoonup",
+"LMMathItalic-Regular\u0000∂": "partial",
+"LMMathItalic-Regular\u0000⋆": "star",
+"LMMathItalic-Regular\u0000♭": "flat",
+"LMMathItalic-Regular\u0000♮": "natural",
+"LMMathItalic-Regular\u0000♯": "sharp",
+"LMMathSymbols-Regular\u00007→": "mapsto",
+"LMMathSymbols-Regular\u0000A": "mathcal{A}",
+"LMMathSymbols-Regular\u0000B": "mathcal{B}",
+"LMMathSymbols-Regular\u0000C": "mathcal{C}",
+"LMMathSymbols-Regular\u0000D": "mathcal{D}",
+"LMMathSymbols-Regular\u0000E": "mathcal{E}",
+"LMMathSymbols-Regular\u0000F": "mathcal{F}",
+"LMMathSymbols-Regular\u0000G": "mathcal{G}",
+"LMMathSymbols-Regular\u0000H": "mathcal{H}",
+"LMMathSymbols-Regular\u0000I": "mathcal{I}",
+"LMMathSymbols-Regular\u0000J": "mathcal{J}",
+"LMMathSymbols-Regular\u0000K": "mathcal{K}",
+"LMMathSymbols-Regular\u0000L": "mathcal{L}",
+"LMMathSymbols-Regular\u0000M": "mathcal{M}",
+"LMMathSymbols-Regular\u0000N": "mathcal{N}",
+"LMMathSymbols-Regular\u0000O": "mathcal{O}",
+"LMMathSymbols-Regular\u0000P": "mathcal{P}",
+"LMMathSymbols-Regular\u0000Q": "mathcal{Q}",
+"LMMathSymbols-Regular\u0000R": "mathcal{R}",
+"LMMathSymbols-Regular\u0000S": "mathcal{S}",
+"LMMathSymbols-Regular\u0000T": "mathcal{T}",
+"LMMathSymbols-Regular\u0000U": "mathcal{U}",
+"LMMathSymbols-Regular\u0000V": "mathcal{V}",
+"LMMathSymbols-Regular\u0000W": "mathcal{W}",
+"LMMathSymbols-Regular\u0000X": "mathcal{X}",
+"LMMathSymbols-Regular\u0000Y": "mathcal{Y}",
+"LMMathSymbols-Regular\u0000Z": "mathcal{Z}",
+"LMMathSymbols-Regular\u0000\\": "setminus",
+"LMMathSymbols-Regular\u0000|": "mid",
+"LMMathSymbols-Regular\u0000¬": "neg",
+"LMMathSymbols-Regular\u0000±": "pm",
+"LMMathSymbols-Regular\u0000·": "cdot",
+"LMMathSymbols-Regular\u0000×": "times",
+"LMMathSymbols-Regular\u0000÷": "div",
+"LMMathSymbols-Regular\u0000†": "dagger",
+"LMMathSymbols-Regular\u0000‡": "ddagger",
+"LMMathSymbols-Regular\u0000•": "bullet",
+"LMMathSymbols-Regular\u0000′": "prime",
+"LMMathSymbols-Regular\u0000ℑ": "Im",
+"LMMathSymbols-Regular\u0000ℜ": "Re",
+"LMMathSymbols-Regular\u0000ℵ": "aleph",
+"LMMathSymbols-Regular\u0000←": "leftarrow",
+"LMMathSymbols-Regular\u0000→": "rightarrow",
+"LMMathSymbols-Regular\u0000↔": "leftrightarrow",
+"LMMathSymbols-Regular\u0000⇐": "Leftarrow",
+"LMMathSymbols-Regular\u0000⇒": "Rightarrow",
+"LMMathSymbols-Regular\u0000⇔": "Leftrightarrow",
+"LMMathSymbols-Regular\u0000∀": "forall",
+"LMMathSymbols-Regular\u0000∃": "exists",
+"LMMathSymbols-Regular\u0000∅": "emptyset",
+"LMMathSymbols-Regular\u0000∇": "nabla",
+"LMMathSymbols-Regular\u0000∈": "in",
+"LMMathSymbols-Regular\u0000∋": "ni",
+"LMMathSymbols-Regular\u0000−→": "longrightarrow",
+"LMMathSymbols-Regular\u0000∓": "mp",
+"LMMathSymbols-Regular\u0000∗": "ast",
+"LMMathSymbols-Regular\u0000√": "surd",
+"LMMathSymbols-Regular\u0000∝": "propto",
+"LMMathSymbols-Regular\u0000∞": "infty",
+"LMMathSymbols-Regular\u0000∥": "parallel",
+"LMMathSymbols-Regular\u0000∧": "wedge",
+"LMMathSymbols-Regular\u0000∨": "vee",
+"LMMathSymbols-Regular\u0000∩": "cap",
+"LMMathSymbols-Regular\u0000∪": "cup",
+"LMMathSymbols-Regular\u0000∼": "sim",
+"LMMathSymbols-Regular\u0000≃": "simeq",
+"LMMathSymbols-Regular\u0000≈": "approx",
+"LMMathSymbols-Regular\u0000≍": "asymp",
+"LMMathSymbols-Regular\u0000≡": "equiv",
+"LMMathSymbols-Regular\u0000≤": "leq",
+"LMMathSymbols-Regular\u0000≥": "geq",
+"LMMathSymbols-Regular\u0000≪": "ll",
+"LMMathSymbols-Regular\u0000≫": "gg",
+"LMMathSymbols-Regular\u0000≺": "prec",
+"LMMathSymbols-Regular\u0000≻": "succ",
+"LMMathSymbols-Regular\u0000⊂": "subset",
+"LMMathSymbols-Regular\u0000⊃": "supset",
+"LMMathSymbols-Regular\u0000⊆": "subseteq",
+"LMMathSymbols-Regular\u0000⊇": "supseteq",
+"LMMathSymbols-Regular\u0000⊕": "oplus",
+"LMMathSymbols-Regular\u0000⊖": "ominus",
+"LMMathSymbols-Regular\u0000⊗": "otimes",
+"LMMathSymbols-Regular\u0000⊘": "oslash",
+"LMMathSymbols-Regular\u0000⊙": "odot",
+"LMMathSymbols-Regular\u0000⊤": "top",
+"LMMathSymbols-Regular\u0000⊥": "perp",
+"LMMathSymbols-Regular\u0000◦": "circ",
+"LMMathSymbols-Regular\u0000⨿": "amalg",
+"LMRoman-Regular\u0000Γ": "Gamma",
+"LMRoman-Regular\u0000Θ": "Theta",
+"LMRoman-Regular\u0000Λ": "Lambda",
+"LMRoman-Regular\u0000Ξ": "Xi",
+"LMRoman-Regular\u0000Π": "Pi",
+"LMRoman-Regular\u0000Σ": "Sigma",
+"LMRoman-Regular\u0000Υ": "Upsilon",
+"LMRoman-Regular\u0000Φ": "Phi",
+"LMRoman-Regular\u0000Ψ": "Psi",
+"LMRoman-Regular\u0000Ω": "Omega",
+"LMRoman-Regular\u0000∆": "Delta",
+"MSAM\u0000∠": "angle",
+"MSAM\u0000∴": "therefore",
+"MSAM\u0000∵": "because",
+"MSAM\u0000≲": "lesssim",
+"MSAM\u0000≳": "gtrsim",
+"MSAM\u0000■": "blacksquare",
+"MSAM\u0000□": "square",
+"MSBM\u0000C": "mathbb{C}",
+"MSBM\u0000N": "mathbb{N}",
+"MSBM\u0000Q": "mathbb{Q}",
+"MSBM\u0000R": "mathbb{R}",
+"MSBM\u0000Z": "mathbb{Z}",
+"MSBM\u0000ℏ": "hbar",
+"MSBM\u0000∅": "varnothing",
+"NewTXMI\u0000ℎ": "h",
+"NewTXMI\u0000ℓ": "ell",
+"NewTXMI\u0000℘": "wp",
+"NewTXMI\u0000⇀": "rightharpoonup",
+"NewTXMI\u0000★": "star",
+"NewTXMI\u0000♭": "flat",
+"NewTXMI\u0000♮": "natural",
+"NewTXMI\u0000♯": "sharp",
+"NimbusRomNoL-Regu\u0000/0": "emptyset",
+"NimbusRomNoL-Regu\u0000†": "dagger",
+"NimbusRomNoL-Regu\u0000‡": "ddagger",
+"NimbusRomNoL-ReguItal\u0000A": "A",
+"NimbusRomNoL-ReguItal\u0000B": "B",
+"NimbusRomNoL-ReguItal\u0000C": "C",
+"NimbusRomNoL-ReguItal\u0000D": "D",
+"NimbusRomNoL-ReguItal\u0000E": "E",
+"NimbusRomNoL-ReguItal\u0000F": "F",
+"NimbusRomNoL-ReguItal\u0000G": "G",
+"NimbusRomNoL-ReguItal\u0000H": "H",
+"NimbusRomNoL-ReguItal\u0000I": "I",
+"NimbusRomNoL-ReguItal\u0000J": "J",
+"NimbusRomNoL-ReguItal\u0000K": "K",
+"NimbusRomNoL-ReguItal\u0000L": "L",
+"NimbusRomNoL-ReguItal\u0000M": "M",
+"NimbusRomNoL-ReguItal\u0000N": "N",
+"NimbusRomNoL-ReguItal\u0000O": "O",
+"NimbusRomNoL-ReguItal\u0000P": "P",
+"NimbusRomNoL-ReguItal\u0000Q": "Q",
+"NimbusRomNoL-ReguItal\u0000R": "R",
+"NimbusRomNoL-ReguItal\u0000S": "S",
+"NimbusRomNoL-ReguItal\u0000T": "T",
+"NimbusRomNoL-ReguItal\u0000U": "U",
+"NimbusRomNoL-ReguItal\u0000V": "V",
+"NimbusRomNoL-ReguItal\u0000W": "W",
+"NimbusRomNoL-ReguItal\u0000X": "X",
+"NimbusRomNoL-ReguItal\u0000Y": "Y",
+"NimbusRomNoL-ReguItal\u0000Z": "Z",
+"NimbusRomNoL-ReguItal\u0000a": "a",
+"NimbusRomNoL-ReguItal\u0000b": "b",
+"NimbusRomNoL-ReguItal\u0000c": "c",
+"NimbusRomNoL-ReguItal\u0000d": "d",
+"NimbusRomNoL-ReguItal\u0000e": "e",
+"NimbusRomNoL-ReguItal\u0000f": "f",
+"NimbusRomNoL-ReguItal\u0000g": "g",
+"NimbusRomNoL-ReguItal\u0000h": "h",
+"NimbusRomNoL-ReguItal\u0000i": "i",
+"NimbusRomNoL-ReguItal\u0000j": "j",
+"NimbusRomNoL-ReguItal\u0000k": "k",
+"NimbusRomNoL-ReguItal\u0000l": "l",
+"NimbusRomNoL-ReguItal\u0000m": "m",
+"NimbusRomNoL-ReguItal\u0000n": "n",
+"NimbusRomNoL-ReguItal\u0000o": "o",
+"NimbusRomNoL-ReguItal\u0000p": "p",
+"NimbusRomNoL-ReguItal\u0000q": "q",
+"NimbusRomNoL-ReguItal\u0000r": "r",
+"NimbusRomNoL-ReguItal\u0000s": "s",
+"NimbusRomNoL-ReguItal\u0000t": "t",
+"NimbusRomNoL-ReguItal\u0000u": "u",
+"NimbusRomNoL-ReguItal\u0000v": "v",
+"NimbusRomNoL-ReguItal\u0000w": "w",
+"NimbusRomNoL-ReguItal\u0000x": "x",
+"NimbusRomNoL-ReguItal\u0000y": "y",
+"NimbusRomNoL-ReguItal\u0000z": "z",
+"NimbusRomNoL-ReguItal\u0000ı": "imath",
+"StandardSymL\u0000Γ": "Gamma",
+"StandardSymL\u0000Θ": "Theta",
+"StandardSymL\u0000Λ": "Lambda",
+"StandardSymL\u0000Ξ": "Xi",
+"StandardSymL\u0000Π": "Pi",
+"StandardSymL\u0000Σ": "Sigma",
+"StandardSymL\u0000Φ": "Phi",
+"StandardSymL\u0000Ψ": "Psi",
+"StandardSymL\u0000ϒ": "Upsilon",
+"StandardSymL\u0000ℑ": "Im",
+"StandardSymL\u0000ℜ": "Re",
+"StandardSymL\u0000Ω": "Omega",
+"StandardSymL\u0000ℵ": "aleph",
+"StandardSymL\u0000∆": "Delta",
+"StandardSymL\u0000∇": "nabla",
+"StandardSymL\u0000∏": "prod",
+"StandardSymL\u0000∑": "sum",
+"StandardSymL\u0000∝": "propto",
+"StandardSymL\u0000∞": "infty",
+"StandardSymL-Slant_\u0000µ": "mu",
+"StandardSymL-Slant_\u0000α": "alpha",
+"StandardSymL-Slant_\u0000β": "beta",
+"StandardSymL-Slant_\u0000γ": "gamma",
+"StandardSymL-Slant_\u0000δ": "delta",
+"StandardSymL-Slant_\u0000ε": "epsilon",
+"StandardSymL-Slant_\u0000ζ": "zeta",
+"StandardSymL-Slant_\u0000η": "eta",
+"StandardSymL-Slant_\u0000θ": "theta",
+"StandardSymL-Slant_\u0000ι": "iota",
+"StandardSymL-Slant_\u0000κ": "kappa",
+"StandardSymL-Slant_\u0000λ": "lambda",
+"StandardSymL-Slant_\u0000ν": "nu",
+"StandardSymL-Slant_\u0000ξ": "xi",
+"StandardSymL-Slant_\u0000π": "pi",
+"StandardSymL-Slant_\u0000ρ": "rho",
+"StandardSymL-Slant_\u0000ς": "varsigma",
+"StandardSymL-Slant_\u0000σ": "sigma",
+"StandardSymL-Slant_\u0000τ": "tau",
+"StandardSymL-Slant_\u0000υ": "upsilon",
+"StandardSymL-Slant_\u0000φ": "phi",
+"StandardSymL-Slant_\u0000χ": "chi",
+"StandardSymL-Slant_\u0000ψ": "psi",
+"StandardSymL-Slant_\u0000ω": "omega",
+"StandardSymL-Slant_\u0000ϑ": "vartheta",
+"StandardSymL-Slant_\u0000ϕ": "varphi",
+"StandardSymL-Slant_\u0000ϖ": "varpi",
+"StandardSymL-Slant_\u0000℘": "wp",
+"StandardSymL-Slant_\u0000∂": "partial",
+"TeXGyreTermesX-Regular\u0000`": "grave{x}",
+"TeXGyreTermesX-Regular\u0000¯": "bar{x}",
+"TeXGyreTermesX-Regular\u0000´": "acute{x}",
+"TeXGyreTermesX-Regular\u0000ˆ": "hat{x}",
+"TeXGyreTermesX-Regular\u0000ˇ": "check{x}",
+"TeXGyreTermesX-Regular\u0000˘": "breve{x}",
+"TeXGyreTermesX-Regular\u0000˜": "tilde{x}",
+"rsfs\u0000A": "mathcal{A}",
+"rsfs\u0000B": "mathcal{B}",
+"rsfs\u0000C": "mathcal{C}",
+"rsfs\u0000D": "mathcal{D}",
+"rsfs\u0000E": "mathcal{E}",
+"rsfs\u0000F": "mathcal{F}",
+"rsfs\u0000G": "mathcal{G}",
+"rsfs\u0000H": "mathcal{H}",
+"rsfs\u0000I": "mathcal{I}",
+"rsfs\u0000J": "mathcal{J}",
+"rsfs\u0000K": "mathcal{K}",
+"rsfs\u0000L": "mathcal{L}",
+"rsfs\u0000M": "mathcal{M}",
+"rsfs\u0000N": "mathcal{N}",
+"rsfs\u0000O": "mathcal{O}",
+"rsfs\u0000P": "mathcal{P}",
+"rsfs\u0000Q": "mathcal{Q}",
+"rsfs\u0000R": "mathcal{R}",
+"rsfs\u0000S": "mathcal{S}",
+"rsfs\u0000T": "mathcal{T}",
+"rsfs\u0000U": "mathcal{U}",
+"rsfs\u0000V": "mathcal{V}",
+"rsfs\u0000W": "mathcal{W}",
+"rsfs\u0000X": "mathcal{X}",
+"rsfs\u0000Y": "mathcal{Y}",
+"rsfs\u0000Z": "mathcal{Z}",
+"txexs\u0000É": "bigoplus",
+"txexs\u0000Ê": "bigoplus",
+"txexs\u0000Ë": "bigotimes",
+"txexs\u0000Ì": "bigotimes",
+"txexs\u0000Í": "sum",
+"txexs\u0000Î": "prod",
+"txexs\u0000Ð": "bigcup",
+"txexs\u0000Ñ": "bigcap",
+"txexs\u0000Ö": "prod",
+"txexs\u0000Ø": "bigcup",
+"txexs\u0000Ù": "bigcap",
+"txexs\u0000Ý": "coprod",
+"txexs\u0000Þ": "coprod",
+"txexs\u0000∑︁": "sum",
+"txexs\u0000√︁": "sqrt{\\frac{a}{b}}",
+"txexs\u0000√︃": "sqrt{\\frac{\\frac{a}{b}}{c}}",
+"txexs\u0000∫": "int",
+"txexs\u0000∮": "oint",
+"txmiaX\u0000Γ": "Gamma",
+"txmiaX\u0000Δ": "Delta",
+"txmiaX\u0000Θ": "Theta",
+"txmiaX\u0000Λ": "Lambda",
+"txmiaX\u0000Ξ": "Xi",
+"txmiaX\u0000Π": "Pi",
+"txmiaX\u0000Σ": "Sigma",
+"txmiaX\u0000Υ": "Upsilon",
+"txmiaX\u0000Φ": "Phi",
+"txmiaX\u0000Ψ": "Psi",
+"txmiaX\u0000Ω": "Omega",
+"txmiaX\u0000ℏ": "hbar",
+"txmiaX\u0000∉": "notin",
+"txmiaX\u0000≠": "neq",
+"txsyc\u0000\u001b": "cong",
+"txsym\u0000C": "mathbb{C}",
+"txsym\u0000N": "mathbb{N}",
+"txsym\u0000Q": "mathbb{Q}",
+"txsym\u0000R": "mathbb{R}",
+"txsym\u0000Z": "mathbb{Z}",
+"txsym\u0000∠": "angle",
+"txsym\u0000∴": "therefore",
+"txsym\u0000∵": "because",
+"txsym\u0000≲": "lesssim",
+"txsym\u0000≳": "gtrsim",
+"txsym\u0000■": "blacksquare",
+"txsym\u0000□": "square",
+"txsys\u0000A": "mathcal{A}",
+"txsys\u0000B": "mathcal{B}",
+"txsys\u0000C": "mathcal{C}",
+"txsys\u0000D": "mathcal{D}",
+"txsys\u0000E": "mathcal{E}",
+"txsys\u0000F": "mathcal{F}",
+"txsys\u0000G": "mathcal{G}",
+"txsys\u0000H": "mathcal{H}",
+"txsys\u0000I": "mathcal{I}",
+"txsys\u0000J": "mathcal{J}",
+"txsys\u0000K": "mathcal{K}",
+"txsys\u0000L": "mathcal{L}",
+"txsys\u0000M": "mathcal{M}",
+"txsys\u0000N": "mathcal{N}",
+"txsys\u0000O": "mathcal{O}",
+"txsys\u0000P": "mathcal{P}",
+"txsys\u0000Q": "mathcal{Q}",
+"txsys\u0000R": "mathcal{R}",
+"txsys\u0000S": "mathcal{S}",
+"txsys\u0000T": "mathcal{T}",
+"txsys\u0000U": "mathcal{U}",
+"txsys\u0000V": "mathcal{V}",
+"txsys\u0000W": "mathcal{W}",
+"txsys\u0000X": "mathcal{X}",
+"txsys\u0000Y": "mathcal{Y}",
+"txsys\u0000Z": "mathcal{Z}",
+"txsys\u0000\\": "setminus",
+"txsys\u0000|": "mid",
+"txsys\u0000¤": "dot{x}",
+"txsys\u0000¥": "ddot{x}",
+"txsys\u0000¬": "neg",
+"txsys\u0000®": "vec{x}",
+"txsys\u0000±": "pm",
+"txsys\u0000·": "cdot",
+"txsys\u0000×": "times",
+"txsys\u0000÷": "div",
+"txsys\u0000†": "dagger",
+"txsys\u0000‡": "ddagger",
+"txsys\u0000•": "bullet",
+"txsys\u0000′": "prime",
+"txsys\u0000ℑ": "Im",
+"txsys\u0000ℜ": "Re",
+"txsys\u0000ℵ": "aleph",
+"txsys\u0000←": "leftarrow",
+"txsys\u0000→": "rightarrow",
+"txsys\u0000↔": "leftrightarrow",
+"txsys\u0000↦→": "mapsto",
+"txsys\u0000⇐": "Leftarrow",
+"txsys\u0000⇒": "Rightarrow",
+"txsys\u0000⇔": "Leftrightarrow",
+"txsys\u0000∀": "forall",
+"txsys\u0000∃": "exists",
+"txsys\u0000∅": "emptyset",
+"txsys\u0000∇": "nabla",
+"txsys\u0000∈": "in",
+"txsys\u0000∋": "ni",
+"txsys\u0000−→": "longrightarrow",
+"txsys\u0000∓": "mp",
+"txsys\u0000∗": "ast",
+"txsys\u0000√": "surd",
+"txsys\u0000∝": "propto",
+"txsys\u0000∞": "infty",
+"txsys\u0000∥": "parallel",
+"txsys\u0000∧": "wedge",
+"txsys\u0000∨": "vee",
+"txsys\u0000∩": "cap",
+"txsys\u0000∪": "cup",
+"txsys\u0000∼": "sim",
+"txsys\u0000≃": "simeq",
+"txsys\u0000≈": "approx",
+"txsys\u0000≍": "asymp",
+"txsys\u0000≡": "equiv",
+"txsys\u0000≤": "leq",
+"txsys\u0000≥": "geq",
+"txsys\u0000≪": "ll",
+"txsys\u0000≫": "gg",
+"txsys\u0000≺": "prec",
+"txsys\u0000≻": "succ",
+"txsys\u0000⊂": "subset",
+"txsys\u0000⊃": "supset",
+"txsys\u0000⊆": "subseteq",
+"txsys\u0000⊇": "supseteq",
+"txsys\u0000⊕": "oplus",
+"txsys\u0000⊖": "ominus",
+"txsys\u0000⊗": "otimes",
+"txsys\u0000⊘": "oslash",
+"txsys\u0000⊙": "odot",
+"txsys\u0000⊤": "top",
+"txsys\u0000⊥": "perp",
+"txsys\u0000◦": "circ",
+"txsys\u0000⨿": "amalg"
+}
+}

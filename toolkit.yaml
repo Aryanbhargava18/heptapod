@@ -1,5 +1,5 @@
 name: heptapod
-version: 2.6.0
+version: 2.13.0
 description: An open-source agentic toolkit for high-energy physics.
 author: Tony Menzo
 license: GPL-3.0
@@ -28,19 +28,63 @@ config:
     required: false
   - name: wolframscript_path
     description: Command or absolute path to wolframscript. Required for
-      the feynrules bundle and the eda bundle's Wolfram-backed tools.
+      the wolfram bundle, and for the eda and feynrules bundles, which drive
+      Mathematica through it.
     type: path
     required: false
   - name: cache_enabled
     description: Enable INSPIRE query caching.
     type: boolean
     default: false
+  - name: blank_agent_cmd
+    description: Command template for the blank-slate agent the reverse bundle
+      spawns. The agent runs in an empty directory with no MCP tools and no
+      history, so it can only see the sanitized model file. Token {output} is
+      the path the CLI writes its final message to; token {prompt} is the
+      prompt text, and if absent the prompt is appended as the last argument.
+      Any CLI agent works, for example `codex exec --sandbox read-only
+      --output-last-message {output}` or `claude -p --output-format text`.
+      Used by the reverse bundle; when unset the tool falls back to a
+      built-in `codex exec` template.
+    type: string
+    required: false
 bundles:
   # ── lightweight / always-available ───────────────────────────────
   units: {}                              # pure python; nothing to install
   inspire: {}                            # uses requests (always-installed base)
   pdg:
     deps: [pdg>=0.2.0]                   # PDG database API
+
+  # ── pipeline plumbing ────────────────────────────────────────────
+  # Structured provenance ledger (audit.json) for end-to-end runs; pure python.
+  logging: {}
+  # Background jobs: run slow tools (Lagrangian checks, UFO compiles,
+  # MadGraph runs) as detached processes, poll them, collect results.
+  jobs: {}
+  # Blank-slate reverse check: an independent agent reconstructs the physics
+  # from the sanitized .fr alone, then a second one compares it to the paper.
+  # Spawns the CLI named by blank_agent_cmd; pure python otherwise.
+  reverse: {}
+
+  # ── literature ───────────────────────────────────────────────────
+  # TeX-faithful text extraction from LaTeX-produced PDFs. pypdfium2 is a
+  # prebuilt PDFium wheel (Apache-2.0/BSD-3) with no transitive Python
+  # dependencies, so this stays clear of the event_gen stack. The glyph
+  # table ships with the toolkit; pdflatex is only needed to regenerate it.
+  # ── paper retrieval from arXiv ───────────────────────────────────
+  # Search, PDF download, LaTeX e-print source. Declares no deps: it needs
+  # only `requests` from the base install. The modules live under
+  # tools/literature/ (a bundle is a grouping, not a directory -- cf. `bsm`
+  # over tools/analysis/), and that package defers its PDF imports, so an
+  # arxiv-only install imports and runs without pypdfium2.
+  arxiv: {}
+
+  # PDF -> TeX extraction, for the papers arXiv has no source for. Carries the
+  # arXiv tools too, since fetching a paper's source and reconstructing text
+  # from its PDF are two halves of one job; pypdfium2 is needed only for the
+  # second half.
+  literature:
+    deps: [pypdfium2>=4.30.0]
 
   # ── analysis stack ───────────────────────────────────────────────
   analysis:
@@ -90,10 +134,34 @@ bundles:
   nda:
     deps: [feyngraph]                    # for EnumerateDiagramsTool, VisualizeDiagramsTool
 
+  # ── generic Wolfram Language execution ───────────────────────────
+  # Runs arbitrary .wl scripts (or inline code) through wolframscript and
+  # parses the optional structured-result markers. Deliberately declares no
+  # pip deps: it is stdlib-only, loads no Wolfram packages, and knows nothing
+  # about what the scripts compute, so it installs on a bare environment.
+  # The eda and feynrules bundles are consumers, not prerequisites.
+  wolfram:
+    requires: [wolframscript_path]
+
   # ── exact symbolic amplitudes via Mathematica/FeynCalc ───────────
   eda:
     requires: [wolframscript_path]
     deps: [sympy>=1.14.0]
+
+  # ── BSM model building: structured spec -> .fr ───────────────────
+  # Turn a validated FeynRulesModel spec into FeynRules source. No Mathematica
+  # needed; the .fr -> UFO step is the feynrules bundle below.
+  frgen:
+    deps: [jinja2>=3.1.0]                # pydantic comes via the orchestral base
+
+  # ── reading compiled UFO models ──────────────────────────────────
+  # Static, import-free inspection of a UFO directory: particles, parameters,
+  # couplings, vertices, gauge. Stdlib-only and deliberately NOT under
+  # feynrules -- a UFO is the format MadGraph consumes, FeynRules is only one
+  # producer of them, and reading one needs neither Mathematica nor a FeynRules
+  # install. Requiring either would deny the tool to anyone holding a UFO from
+  # somewhere else.
+  ufo: {}
 
   # ── BSM model UFO generation via Mathematica/FeynRules ───────────
   feynrules:
@@ -195,14 +263,15 @@ tools:
     name: ConvertToPython
     description: Convert a Mathematica symbolic expression to a Python function.
     bundle: eda
-  - module: tools.eda.run_wolfram_tool
+  - module: tools.wolfram.run_wolfram_tool
     name: RunWolframScript
-    description: Execute Mathematica/FeynCalc code via wolframscript.
-    bundle: eda
-  - module: tools.eda.run_wolfram_tool
+    description: Execute Wolfram Language code, or an existing .wl script, via
+      wolframscript. Package-agnostic; a script loads whatever it needs.
+    bundle: [wolfram, eda]
+  - module: tools.wolfram.run_wolfram_tool
     name: RunWolframScriptBatch
-    description: Execute multiple Mathematica/FeynCalc scripts concurrently.
-    bundle: eda
+    description: Execute multiple .wl scripts concurrently via wolframscript.
+    bundle: [wolfram, eda]
   - module: tools.eda.simplify_result_tool
     name: SimplifyResult
     description: Simplify, substitute, or take limits of a Mathematica symbolic
@@ -225,11 +294,89 @@ tools:
     description: Generate Feynman diagram visualizations using FeynGraph's
       native SVG drawing.
     bundle: nda
+  - module: tools.frgen.frgen_tool
+    name: GenerateFeynRulesModelTool
+    description: Generate a FeynRules .fr model file from a structured JSON
+      spec, keeping the error-prone Mathematica blocks out of hand-written
+      text. Reports the Lagrangian symbols it wrote.
+    bundle: frgen
   - module: tools.feynrules.feynrules
     name: FeynRulesToUFOTool
-    description: Generate a UFO model directory from a FeynRules .fr model file
-      by calling Mathematica's `wolframscript`.
+    description: Compile a FeynRules .fr model to a UFO directory via
+      Mathematica's `wolframscript`, running FeynRules' consistency checks
+      first and verifying the UFO is complete before reporting success.
     bundle: feynrules
+  - module: tools.feynrules.feynrules
+    name: ValidateLagrangianTool
+    description: Run FeynRules' consistency checks on a .fr model's Lagrangian
+      (hermiticity, diagonal kinetic and mass terms, mass spectrum) without
+      writing a UFO.
+    bundle: feynrules
+  - module: tools.feynrules.validate_tool
+    name: ValidateUFOModelTool
+    description: Compile a .fr model to a UFO and check what was produced --
+      the expected files exist, every declared particle reached the UFO with
+      the right quantum numbers, and optionally that a partial width matches a
+      closed-form expectation.
+    bundle: feynrules
+  - module: tools.ufo.inspect_tool
+    name: InspectUFOTool
+    description: Read a compiled UFO -- particles, parameters, couplings,
+      vertices and gauge -- with numbers evaluated on request, including
+      internal parameters resolved in dependency order and couplings evaluated
+      away from the card defaults. Parsed with `ast`, never imported.
+    bundle: ufo
+  - module: tools.logging.audit_tool
+    name: AuditTrailTool
+    description: Record, render or read a structured provenance ledger
+      (audit.json) of pipeline stages for an end-to-end run.
+    bundle: logging
+  - module: tools.jobs.jobs_tool
+    name: SubmitJobTool
+    description: Submit a slow heptapod tool (Lagrangian checks, UFO compile or
+      validation, MadGraph run) as a detached background job and get a job_id
+      back immediately.
+    bundle: jobs
+  - module: tools.jobs.jobs_tool
+    name: JobStatusTool
+    description: Poll a background job's state (queued, running, done, failed)
+      with a log tail, or list all jobs.
+    bundle: jobs
+  - module: tools.jobs.jobs_tool
+    name: JobResultTool
+    description: Fetch a finished background job's verbatim tool output.
+    bundle: jobs
+  - module: tools.reverse.reverse_tool
+    name: ReverseLagrangianTool
+    description: Blank-slate reverse check of a .fr model. An independent
+      agent reconstructs the LaTeX Lagrangian from the sanitized file alone,
+      optionally cross-checked against the source paper, packaged for
+      physicist sign-off.
+    bundle: reverse
+  - module: tools.literature.literature_tools
+    name: ArxivSearchTool
+    description: Search arXiv for papers (arXiv ids, PDF links, abstracts).
+      Complements the INSPIRE tools, which cover HEP metadata and citations
+      but have no arXiv access.
+    bundle: [arxiv, literature]
+  - module: tools.literature.literature_tools
+    name: ArxivSourceTool
+    description: Fetch a paper's LaTeX e-print source from arXiv. Preferred
+      over the PDF path for reading equations, which survive intact in the
+      source and are flattened by PDF text extraction.
+    bundle: [arxiv, literature]
+  - module: tools.literature.literature_tools
+    name: ArxivPDFTool
+    description: Download an arXiv paper's PDF into the sandbox, for papers
+      arXiv has no e-print source for. Lands in <output_dir>/<arxiv_id>/
+      alongside anything ArxivSourceTool fetched for the same paper.
+    bundle: [arxiv, literature]
+  - module: tools.literature.pdf_to_tex_tool
+    name: PDFToTeXTool
+    description: Extract TeX-flavoured text from a LaTeX-produced PDF,
+      recovering symbols, sub/superscripts, fractions and radicals as TeX
+      macros. Writes to a file and returns a summary.
+    bundle: literature
   - module: tools.inspire.inspire_tools
     name: InspireAuthorTool
     description: Get information about a physicist and their publication

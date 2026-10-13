@@ -8,8 +8,8 @@
 Agentic Diagrammatica — exact tree-level calculations via FeynCalc.
 
 Tools:
-    RunWolframScript          — execute Mathematica/FeynCalc code via wolframscript
-    RunWolframScriptBatch     — execute multiple Mathematica scripts concurrently
+    RunWolframScript          — re-exported from tools.wolfram (generic runner)
+    RunWolframScriptBatch     — re-exported from tools.wolfram (generic runner)
     ComputeSymbolicAmplitude  — generate FeynCalc code from a SymbolicDiagram
     ConvertToPython           — convert FeynCalc SYMBOLIC_RESULT to Python function
     SimplifyResult            — simplify, substitute, or take limits of symbolic results
@@ -25,12 +25,17 @@ Utilities:
     symbolic_to_python    — convert Mathematica SYMBOLIC_RESULT to Python callable
 """
 
-from .run_wolfram_tool import RunWolframScript, RunWolframScriptBatch
+# Wolfram execution is generic and lives in tools.wolfram; re-exported here
+# so existing `from tools.eda import RunWolframScript` callers keep working.
+from tools.wolfram import (
+    RunWolframScript,
+    RunWolframScriptBatch,
+    load_expression_from_sidecar,
+)
 from .feyncalc_codegen import FeynCalcCodeGenerator, SymbolicFeynCalcCodeGenerator, GeneratedCode, ProcessType
 from .compute_symbolic_amplitude_tool import ComputeSymbolicAmplitude
 from .convert_to_python_tool import ConvertToPython
 from .simplify_result_tool import SimplifyResult, SimplifyResultBatch
-from .result_utils import load_expression_from_sidecar
 from .symbolic_to_python import (
     mathematica_to_sympy,
     mathematica_to_callable,

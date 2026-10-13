@@ -241,16 +241,18 @@ def test_classification():
         all_passed = False
     print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: 3-body classified as UNSUPPORTED")
 
-    # Missing sqrt_s for 2->2
+    # sqrt_s is OPTIONAL for 2->2: the cross section is built symbolically in
+    # s, so a missing sqrt_s costs only the numeric evaluation, not the script.
     result = gen.generate(_make_ee_to_mumu())
     ok = (
         result.process_type == ProcessType.SCATTERING_2TO2
-        and any("sqrt_s" in w for w in result.warnings)
-        and result.code == ""
+        and result.code != ""
+        and "SYMBOLIC_RESULT[sigma]" in result.code
+        and "NUMERICAL_RESULT[sigma_GeV2]" not in result.code
     )
     if not ok:
         all_passed = False
-    print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: 2->2 without sqrt_s gives warning and no code")
+    print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: 2->2 without sqrt_s still builds a symbolic sigma")
 
     print()
     return all_passed
@@ -423,10 +425,19 @@ def test_scattering():
         (code != "", "generates code"),
         (result.process_type == ProcessType.SCATTERING_2TO2, "process type is SCATTERING_2TO2"),
         ("FCClearScalarProducts[]" in code, "uses FCClearScalarProducts"),
-        ("SetMandelstam" in code, "has Mandelstam kinematics"),
+        # Kinematics are explicit ScalarProduct assignments in (s, t) with u
+        # eliminated on shell -- NOT SetMandelstam, which left u alive as an
+        # independent symbol and blocked the t-integration.
+        ("ScalarProduct[p1, p3]" in code, "has explicit (s,t) scalar products"),
+        ("uExpr" in code, "eliminates u on shell"),
+        ("SetMandelstam" not in code, "does not use SetMandelstam"),
         ("sigma" in code, "has cross section variable"),
         ("SpinorU" in code or "SpinorVBar" in code, "has spinors"),
-        ("FAD[" in code, "has propagator (FAD)"),
+        # FAD is a LOOP denominator and drags in D-4 pieces; a tree propagator
+        # must be a plain scalar 1/(q^2 - M^2).
+        ("FAD[" not in code, "no FAD in a tree amplitude"),
+        ("ChangeDimension[amp, 4]" in code, "amplitude normalised to 4 dimensions"),
+        ("symmetryFactor" in code, "has identical-particle symmetry factor"),
         ("SYMBOLIC_RESULT[sigma]" in code, "has symbolic sigma marker"),
         ("NUMERICAL_RESULT[sigma_GeV2]" in code, "has numerical sigma marker"),
         ("kallen" in code, "has Kallen function"),

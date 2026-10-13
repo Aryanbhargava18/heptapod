@@ -14,14 +14,24 @@ Supports:
 The generated scripts follow the standard workflow:
   amplitude -> square -> spin/pol sums -> traces -> kinematics -> observable
 and emit SYMBOLIC_RESULT / NUMERICAL_RESULT markers compatible with
-wolfram_runner.py parsing.
+tools/wolfram/wolfram_runner.py parsing.
 """
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from tools.nda.simple_diagram import Diagram, Particle, Vertex, Propagator
+from .scattering import (  # noqa: F401
+    Channel,
+    UnsupportedScattering,
+    UnsupportedTopology,
+    build_amplitude as _build_scattering_amplitude,
+    build_amplitude_sum as _build_scattering_amplitude_sum,
+    kinematics_block as _scattering_kinematics,
+    cross_section_block as _scattering_cross_section,
+    DEFAULT_INTEGRATE_TIMEOUT_S as _DEFAULT_INTEGRATE_TIMEOUT_S,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -36,12 +46,8 @@ class ProcessType(Enum):
     UNSUPPORTED = auto()
 
 
-class Channel(Enum):
-    """Scattering channel for 2->2 processes."""
-    S = auto()
-    T = auto()
-    U = auto()
-    CONTACT = auto()
+# Channel now lives in `scattering`, alongside the 2->2 builder that uses it.
+# Re-exported here so existing importers of feyncalc_codegen.Channel keep working.
 
 
 @dataclass
@@ -52,92 +58,34 @@ class GeneratedCode:
     warnings: List[str] = field(default_factory=list)
     momentum_map: Dict[str, str] = field(default_factory=dict)
     channel: Optional[Channel] = None
+    #: For a coherent sum, the channel of each summed diagram in order.
+    #: `channel` stays None there, since a sum has no single channel.
+    channels: List[Channel] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_ANTIPARTICLE_SUFFIXES = ("bar", "~", "+")
+# Pure symbol/formatting helpers live in fc_symbols so that `scattering`
+# can reuse them without importing this module (which imports it in turn).
+# Re-exported here: this module's public surface is unchanged.
+from .fc_symbols import (  # noqa: F401
+    _ANTIPARTICLE_SUFFIXES,
+    _is_numeric,
+    _fmt_mma,
+    _is_antiparticle,
+    _safe_symbol,
+    _mass_symbol,
+    _coupling_value,
+)
 
 
-def _is_numeric(s: str) -> bool:
-    """Check if a string represents a numeric value."""
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
 
-
-def _fmt_mma(val) -> str:
-    """Format a number for Mathematica — use integer form when possible.
-
-    Avoids float contamination: ``3.0`` → ``3``, ``1.0`` → ``1``.
-    Mathematica treats ``3.0`` as machine-precision, which spoils symbolic results.
-    """
-    if isinstance(val, float) and val == int(val):
-        return str(int(val))
-    return str(val)
-
-
-def _is_antiparticle(label: str) -> bool:
-    """Heuristic: is this an antiparticle label?"""
-    if label is None:
-        return False
-    label_lower = label.lower().strip()
-    # Explicit suffixes
-    for suf in _ANTIPARTICLE_SUFFIXES:
-        if label_lower.endswith(suf):
-            return True
-    # Positron
-    if label_lower in ("e+", "mu+", "tau+", "positron"):
-        return True
-    return False
-
-
-def _safe_symbol(label: str) -> str:
-    """Turn a particle label into a safe Mathematica symbol fragment."""
-    if label is None:
-        return "X"
-    s = label.replace("+", "p").replace("-", "m").replace("~", "bar").replace("/", "")
-    s = s.replace("(", "").replace(")", "").replace(" ", "")
-    if s and s[0].isdigit():
-        s = "p" + s
-    return s or "X"
-
-
-def _mass_symbol(particle: Particle, idx: int) -> str:
-    """Return a Mathematica symbol for the mass of a particle."""
-    if particle.label:
-        return f"m{_safe_symbol(particle.label)}"
-    return f"m{idx}"
-
-
-def _coupling_value(vertex: Vertex, couplings: Dict[str, float]) -> "str | Dict[str, str]":
-    """Resolve coupling to Mathematica expression.
-
-    Returns a string for simple couplings, or a dict of strings for
-    chiral couplings (e.g., {"gL": "0.27", "gR": "0.23"}).
-    """
-    c = vertex.coupling
-    if isinstance(c, (int, float)):
-        return str(c)
-    if isinstance(c, str):
-        if c in couplings:
-            return str(couplings[c])
-        return c  # leave symbolic
-    if isinstance(c, dict):
-        resolved = {}
-        for key, val in c.items():
-            if isinstance(val, (int, float)):
-                resolved[key] = str(val)
-            elif isinstance(val, str):
-                resolved[key] = str(couplings[val]) if val in couplings else val
-            else:
-                resolved[key] = str(val)
-        return resolved
-    return "g"
+#: (hbar c)^2 = 3.893793721e8 GeV^2 pb  (PDG physical constants).  The old
+#: code hardcoded an nb factor only, while every cross-section benchmark
+#: reports pb; emitting the constant by name keeps the script auditable.
+GEV2_TO_BARN_COMMENT = "GeV2ToPb = 3.893793721*10^8;   (* (hbar c)^2 in GeV^2 pb *)"
 
 
 # ---------------------------------------------------------------------------
@@ -160,9 +108,19 @@ class FeynCalcCodeGenerator:
             ``/. {g -> Conjugate[g], ...}`` rules so |M|^2 is correct for complex couplings.
     """
 
-    def __init__(self, assume_real_couplings: bool = False, simplifications=None):
+    def __init__(self, assume_real_couplings: bool = False, simplifications=None,
+                 channel: Optional[str] = None,
+                 integrate_timeout_s: float = _DEFAULT_INTEGRATE_TIMEOUT_S):
         self.assume_real_couplings = assume_real_couplings
         self.simplifications = simplifications
+        # Explicit s/t/u/contact selection for 2->2. None means "infer",
+        # which falls back to s-channel and records the assumption in
+        # GeneratedCode.warnings rather than hiding it.
+        self.channel = channel
+        self._channel_assumed = False
+        # Seconds the generated script may spend on the symbolic
+        # t-integration before falling through to sigmaNIntegrate.
+        self.integrate_timeout_s = integrate_timeout_s
 
     def _collect_coupling_symbols(self, diagram: Diagram) -> List[str]:
         """Extract symbolic (non-numeric) coupling names from diagram vertices."""
@@ -184,12 +142,15 @@ class FeynCalcCodeGenerator:
 
         Args:
             diagram: A Diagram dataclass (from tools.nda.simple_diagram).
-            sqrt_s: Centre-of-mass energy in GeV (required for 2->2 scattering).
+            sqrt_s: Centre-of-mass energy in GeV. OPTIONAL for 2->2 now that
+                the cross section is built symbolically in ``s``; supply it
+                only to have the script also report a number.
 
         Returns:
             GeneratedCode with the Mathematica script and metadata.
         """
         result = GeneratedCode()
+        self._channel_assumed = False
 
         # 1. Classify
         proc = self._classify_process(diagram)
@@ -204,46 +165,163 @@ class FeynCalcCodeGenerator:
             )
             return result
 
-        if proc == ProcessType.SCATTERING_2TO2 and sqrt_s is None:
-            result.warnings.append("sqrt_s is required for 2->2 scattering.")
-            return result
-
         # 2. Assign momenta
         mom_map = self._assign_momenta(diagram, proc)
         result.momentum_map = mom_map
+
+        is_decay = proc in (ProcessType.DECAY_1TO2, ProcessType.DECAY_1TO2_1PROP)
 
         # 3. Build sections
         sections: List[str] = []
         sections.append(self._header(diagram, proc))
         sections.append(self._mass_definitions(diagram))
 
-        # 4. Build amplitude
-        amp_section, amp_warnings = self._build_amplitude(diagram, proc, mom_map)
-        sections.append(amp_section)
-        result.warnings.extend(amp_warnings)
+        try:
+            amp_section, amp_warnings = self._build_amplitude(diagram, proc, mom_map)
+            sections.append(amp_section)
+            result.warnings.extend(amp_warnings)
 
-        # 5. Square + spin/pol sums + traces
-        coupling_syms = self._collect_coupling_symbols(diagram)
-        sections.append(self._square_amplitude(coupling_syms))
-        sections.append(self._spin_pol_sums(diagram, proc, mom_map))
-        sections.append(self._trace_and_contract())
+            if is_decay:
+                # Decay ordering (unchanged, and validated): square and trace
+                # first, then substitute rest-frame kinematics.
+                coupling_syms = self._collect_coupling_symbols(diagram)
+                sections.append(self._square_amplitude(coupling_syms))
+                sections.append(self._spin_pol_sums(diagram, proc, mom_map))
+                sections.append(self._trace_and_contract())
+                sections.append(self._kinematics_decay(diagram, mom_map))
+                sections.append(self._width_formula(diagram, proc, mom_map))
+            else:
+                # Scattering ordering: kinematics are fixed BEFORE the square,
+                # so the traces are evaluated against on-shell scalar products
+                # in (s, t) and no symbolic u survives into the observable.
+                result.channel = self._infer_channel(diagram, proc)
+                sections.extend(self._scattering_tail(
+                    diagram, mom_map, sqrt_s,
+                    self._collect_coupling_symbols(diagram)))
+        except UnsupportedTopology as exc:
+            result.process_type = ProcessType.UNSUPPORTED
+            result.warnings.append(str(exc))
+            if self._channel_assumed:
+                # The failure may be nothing more than the assumed channel
+                # being the one channel this process does not have.
+                result.warnings.append(
+                    "No channel was specified, so s-channel was assumed — and "
+                    "that assumption is what failed. Pass channel='t' or "
+                    "channel='u' if the diagram you meant is an exchange one."
+                )
+            return result
 
-        # 6. Kinematics
-        if proc in (ProcessType.DECAY_1TO2, ProcessType.DECAY_1TO2_1PROP):
-            sections.append(self._kinematics_decay(diagram, mom_map))
-        else:
-            sections.append(self._kinematics_scattering(diagram, mom_map, sqrt_s))
+        if self._channel_assumed:
+            result.warnings.append(
+                "No channel was specified for this exchange diagram; assumed "
+                "s-channel. Pass channel='s'|'t'|'u' to make it explicit."
+            )
 
-        # 7. Observable
-        if proc in (ProcessType.DECAY_1TO2, ProcessType.DECAY_1TO2_1PROP):
-            sections.append(self._width_formula(diagram, proc, mom_map))
-        else:
-            sections.append(self._cross_section_formula(diagram, mom_map, sqrt_s))
-            result.channel = self._infer_channel(diagram, proc)
+        sections.append(self._numerical_eval(diagram, proc, sqrt_s=sqrt_s))
 
-        # 8. Numerical evaluation + markers
-        sections.append(self._numerical_eval(diagram, proc))
+        result.code = self._assemble_script(sections)
+        return result
 
+    def _scattering_tail(self, diagram: Diagram, mom_map: Dict[str, str],
+                         sqrt_s: Optional[float],
+                         coupling_syms: List[str]) -> List[str]:
+        """Everything after the amplitude, shared by the single and summed paths.
+
+        Kinematics come FIRST: the traces are then evaluated against on-shell
+        scalar products in (s, t) and no symbolic u survives into the
+        observable.
+        """
+        return [
+            self._kinematics_scattering(diagram, mom_map, sqrt_s),
+            self._square_amplitude(coupling_syms),
+            self._spin_pol_sums(diagram, ProcessType.SCATTERING_2TO2, mom_map),
+            self._trace_and_contract(),
+            "(* Step 5: on-shell squared amplitude in (s, t) *)\n"
+            "ampSqKin = ampSq // Simplify;\n",
+            self._cross_section_formula(diagram, mom_map, sqrt_s),
+        ]
+
+    def generate_sum(self, diagrams: Sequence[Tuple[Diagram, "Channel | str"]],
+                     sqrt_s: Optional[float] = None,
+                     relative_signs: Optional[Sequence[int]] = None) -> GeneratedCode:
+        """Build several 2->2 diagrams and add their amplitudes COHERENTLY.
+
+        Most real 2->2 processes are a sum -- phi phi -> phi phi with a cubic
+        coupling is s + t + u, identical-fermion scattering is s + t -- so a
+        generator that only ever emits one diagram is silently wrong whenever
+        more than one contributes.
+
+        `diagrams` is a list of (Diagram, channel) pairs sharing external legs
+        and masses; the channel may be a Channel or one of 's'/'t'/'u'/
+        'contact'. `relative_signs` carries the (-1) between diagrams related
+        by interchange of two external fermion lines.
+
+        The caller supplies WHICH diagrams contribute: deciding that needs a
+        Lagrangian, and the diagram spec carries topology rather than a model.
+        """
+        result = GeneratedCode()
+        self._channel_assumed = False
+
+        if not diagrams:
+            result.process_type = ProcessType.UNSUPPORTED
+            result.warnings.append("generate_sum needs at least one diagram.")
+            return result
+
+        pairs: List[Tuple[Diagram, Channel]] = []
+        for d, ch in diagrams:
+            if self._classify_process(d) != ProcessType.SCATTERING_2TO2:
+                result.process_type = ProcessType.UNSUPPORTED
+                result.warnings.append(
+                    "generate_sum handles 2->2 scattering only; got a "
+                    f"{self._classify_process(d).name} diagram. Decays are "
+                    "generated one at a time with generate()."
+                )
+                return result
+            if isinstance(ch, str):
+                key = ch.strip().lower()
+                try:
+                    ch = {"s": Channel.S, "t": Channel.T, "u": Channel.U,
+                          "contact": Channel.CONTACT}[key]
+                except KeyError:
+                    result.process_type = ProcessType.UNSUPPORTED
+                    result.warnings.append(
+                        f"Unknown scattering channel {ch!r}; expected one of "
+                        "s, t, u, contact."
+                    )
+                    return result
+            pairs.append((d, ch))
+
+        proc = ProcessType.SCATTERING_2TO2
+        result.process_type = proc
+        result.channels = [c for _, c in pairs]
+
+        head = pairs[0][0]
+        mom_map = self._assign_momenta(head, proc)
+        result.momentum_map = mom_map
+
+        coupling_syms: List[str] = []
+        for d, _ in pairs:
+            for sym in self._collect_coupling_symbols(d):
+                if sym not in coupling_syms:
+                    coupling_syms.append(sym)
+
+        sections: List[str] = [
+            self._header(head, proc),
+            self._mass_definitions(head),
+        ]
+        try:
+            sections.append(
+                _build_scattering_amplitude_sum(self, pairs,
+                                                relative_signs=relative_signs)
+            )
+            sections.extend(self._scattering_tail(head, mom_map, sqrt_s,
+                                                  coupling_syms))
+        except UnsupportedTopology as exc:
+            result.process_type = ProcessType.UNSUPPORTED
+            result.warnings.append(str(exc))
+            return result
+
+        sections.append(self._numerical_eval(head, proc, sqrt_s=sqrt_s))
         result.code = self._assemble_script(sections)
         return result
 
@@ -586,20 +664,30 @@ class FeynCalcCodeGenerator:
                 )
 
         elif spins == [0, 0, 1]:
-            # SSV
+            # SSV derivative vertex: i g (ka - kb)^mu over the TWO SCALARS,
+            # ALL-INCOMING (see scattering.VVV_CONVENTION_NOTE -- the same
+            # convention governs every momentum-carrying vertex). An outgoing
+            # leg enters as -p.
+            mu = "mu1"
             if (parent.spin or 0) == 1:
-                # V -> S S: parent is the vector
-                mu = "mu1"
+                # V -> S1 S2: both scalars outgoing, so ka - kb = p2 - p1.
                 lines.append(
-                    f"amp = I ({g}) PolarizationVector[{p}, {mu}] FVD[{p1} - {p2}, {mu}];"
+                    f"amp = I ({g}) PolarizationVector[{p}, {mu}] "
+                    f"FVD[{p2} - {p1}, {mu}];"
                 )
             else:
-                # S -> S V: one daughter is the vector
-                mu = "mu1"
+                # S -> S' V: the scalars are the parent (incoming, +p) and the
+                # scalar daughter (outgoing, -ps), so ka - kb = p + ps.
+                #
+                # This WAS `FVD[p - ps]`, using the momenta as drawn. By
+                # momentum conservation p - ps is the vector's own momentum,
+                # and eps(pv) . pv = 0, so the amplitude vanished identically:
+                # heptapod returned ZERO for every S -> S' V decay.
                 v_mom = p1 if (d0.spin or 0) == 1 else p2
                 s_mom = p2 if (d0.spin or 0) == 1 else p1
                 lines.append(
-                    f"amp = I ({g}) PolarizationVector[{v_mom}, {mu}] FVD[{p} - {s_mom}, {mu}];"
+                    f"amp = I ({g}) PolarizationVector[{v_mom}, {mu}] "
+                    f"FVD[{p} + {s_mom}, {mu}];"
                 )
 
         elif spins == [0, 1, 1]:
@@ -672,14 +760,24 @@ class FeynCalcCodeGenerator:
                     )
 
         elif spins == [1, 1, 1]:
-            # VVV: triple gauge — all three are vectors
+            # VVV: triple gauge, ALL-INCOMING momenta (see
+            # scattering.VVV_CONVENTION_NOTE). For P -> q1 q2 the incoming
+            # momenta are k0 = P, k1 = -q1, k2 = -q2, which satisfy the
+            # k0 + k1 + k2 = 0 the Feynman rule is derived under.
+            #
+            # This CHANGED in the scattering-hardening work. The previous
+            # code evaluated the same expression at (P, q1, q2), momenta
+            # summing to 2P rather than 0, and was wrong at finite masses:
+            # it reproduced the standard Z' -> W+W- width only
+            # asymptotically (0.209 of it at mV/m = 3), while the form
+            # below reproduces it exactly at every mass ratio.
             mu0, mu1, mu2 = "mu0", "mu1", "mu2"
             lines.append(
                 f"amp = I ({g}) PolarizationVector[{p}, {mu0}] "
                 f"PolarizationVector[{p1}, {mu1}] PolarizationVector[{p2}, {mu2}] ("
-                f"MTD[{mu0}, {mu1}] FVD[{p} - {p1}, {mu2}] + "
-                f"MTD[{mu1}, {mu2}] FVD[{p1} - {p2}, {mu0}] + "
-                f"MTD[{mu2}, {mu0}] FVD[{p2} - {p}, {mu1}]);"
+                f"MTD[{mu0}, {mu1}] FVD[{p} + {p1}, {mu2}] + "
+                f"MTD[{mu1}, {mu2}] FVD[{p2} - {p1}, {mu0}] + "
+                f"MTD[{mu2}, {mu0}] FVD[-{p2} - {p}, {mu1}]);"
             )
 
         else:
@@ -689,229 +787,47 @@ class FeynCalcCodeGenerator:
         return "\n".join(lines) + "\n"
 
     def _amplitude_decay_1prop(self, diagram: Diagram, mom_map: Dict[str, str]) -> str:
-        """1->2 decay with one propagator (e.g., off-shell intermediate)."""
-        parent = diagram.initial[0]
-        d0 = diagram.final[0]
-        d1 = diagram.final[1]
-        prop = diagram.propagators[0]
-        p = mom_map["initial_0"]
-        p1 = mom_map["final_0"]
-        p2 = mom_map["final_1"]
-        q = mom_map["prop_0"]
+        """1 -> 2 with one internal line: refused, because it does not close.
 
-        # Two vertices
-        v0 = diagram.vertices[0] if len(diagram.vertices) > 0 else None
-        v1 = diagram.vertices[1] if len(diagram.vertices) > 1 else v0
-        g0 = _coupling_value(v0, diagram.couplings) if v0 else "g1"
-        g1 = _coupling_value(v1, diagram.couplings) if v1 else "g2"
+        The previous implementation emitted ``amp = g0 g1 propNum`` with no
+        spinor or Lorentz structure at all, under a comment reading "for
+        production use, specialize vertex structures per topology" -- the same
+        silent-nonsense failure mode the 2->2 fallback had. It returned a
+        well-formed script and a confident, meaningless number.
 
-        lines = [
-            f"(* Step 1: Amplitude with propagator *)",
-            f"(* Parent: {parent.label}, Prop: {prop.label}, Final: {d0.label} {d1.label} *)",
-        ]
-
-        prop_spin = prop.spin if prop.spin is not None else 0
-        prop_mass = f"mProp0"
-
-        # Momentum conservation: q = p - p1 (or p - p2, depends on topology)
-        # We'll use q = p1 + p2 for s-channel-like, q = p - p1 for t-channel-like
-        lines.append(f"(* Propagator momentum: q = p1 + p2 = p *)")
-
-        # Build propagator numerator
-        if prop_spin == 0:
-            prop_expr = f"I FAD[{{{q}, {prop_mass}}}]"
-        elif prop_spin == 0.5:
-            prop_expr = f"I (GSD[{q}] + {prop_mass}) FAD[{{{q}, {prop_mass}}}]"
-        elif prop_spin == 1:
-            mu_l, mu_r = "muP", "nuP"
-            if prop.mass and prop.mass > 0:
-                prop_expr = (
-                    f"I (-MTD[{mu_l}, {mu_r}] + FVD[{q}, {mu_l}] FVD[{q}, {mu_r}]/{prop_mass}^2) "
-                    f"FAD[{{{q}, {prop_mass}}}]"
-                )
-            else:
-                prop_expr = f"I (-MTD[{mu_l}, {mu_r}]) FAD[{q}]"
-        else:
-            prop_expr = f"I FAD[{{{q}, {prop_mass}}}]"
-
-        # Build vertex factors — simplified: treat as two VFF or SFF vertices
-        # For now, emit a product of vertex1 * propagator * vertex2
-        lines.append(f"(* Vertex 1 coupling: {g0}, Vertex 2 coupling: {g1} *)")
-        lines.append(f"propNum = {prop_expr};")
-        lines.append(f"amp = ({g0}) ({g1}) propNum;")
-        lines.append(f"(* Note: full spinor/Lorentz structure depends on specific process *)")
-        lines.append(f"(* For production use, specialize vertex structures per topology *)")
-
-        return "\n".join(lines) + "\n"
-
-    def _amplitude_scattering(self, diagram: Diagram, mom_map: Dict[str, str]) -> str:
-        """2->2 scattering amplitude."""
-        i0 = diagram.initial[0]
-        i1 = diagram.initial[1]
-        f0 = diagram.final[0]
-        f1 = diagram.final[1]
-        p1 = mom_map["initial_0"]
-        p2 = mom_map["initial_1"]
-        p3 = mom_map["final_0"]
-        p4 = mom_map["final_1"]
-
-        lines = [
-            f"(* Step 1: Amplitude for {i0.label} {i1.label} -> {f0.label} {f1.label} *)"
-        ]
-
-        channel = self._infer_channel(diagram, ProcessType.SCATTERING_2TO2)
-
-        if not diagram.propagators:
-            # Contact 4-point interaction
-            return self._amplitude_scattering_contact(diagram, mom_map, lines)
-
-        prop = diagram.propagators[0]
-        prop_mass = "mProp0"
-        vertex = diagram.vertices[0] if diagram.vertices else None
-        g = _coupling_value(vertex, diagram.couplings) if vertex else "g"
-
-        # All external fermions? (e.g., e+e- -> mu+mu-)
-        all_fermion = all(
-            (p.spin or 0) == 0.5
-            for p in [i0, i1, f0, f1]
+        It cannot be fixed by supplying the missing structure, because the
+        topology is not a tree amplitude. Count line-ends: three external legs
+        plus one internal propagator give 3 + 2 = 5, while two three-point
+        vertices need 6. The only assignment that closes is a two-point
+        insertion (mass mixing, or a self-energy on a leg) beside one
+        three-point vertex -- a propagator correction or a mixing chain, not a
+        distinct amplitude. The diagram spec cannot say which is meant, so
+        guessing would be inventing physics.
+        """
+        raise UnsupportedTopology(
+            "A 1 -> 2 decay with one internal propagator is not a tree "
+            "amplitude: three external legs plus one propagator give five "
+            "line-ends, but two 3-point vertices need six. The topology only "
+            "closes with a 2-point insertion (mass mixing or a self-energy), "
+            "which is a propagator correction rather than a separate diagram. "
+            "If you meant a mixing chain (e.g. A' -> gamma* -> f fbar), fold "
+            "the mixing into an effective coupling and use the plain 1 -> 2 "
+            "topology with no propagator. If you meant a cascade, the process "
+            "has three or more final-state particles."
         )
 
-        if all_fermion and (prop.spin is None or prop.spin == 1):
-            # Fermion scattering via vector boson (most common 2->2)
-            return self._amplitude_ffff_vector(diagram, mom_map, channel, lines)
+    def _amplitude_scattering(self, diagram: Diagram, mom_map: Dict[str, str]) -> str:
+        """2->2 tree amplitude, delegated to the compositional builder.
 
-        # Generic fallback: coupling * propagator
-        q = mom_map.get("prop_0", "q")
-        if channel == Channel.S:
-            lines.append(f"q = {p1} + {p2};")
-        elif channel == Channel.T:
-            lines.append(f"q = {p1} - {p3};")
-        else:
-            lines.append(f"q = {p1} - {p4};")
-
-        prop_spin = prop.spin if prop.spin is not None else 1
-        if prop_spin == 0:
-            lines.append(f"amp = I ({g})^2 FAD[{{{q}, {prop_mass}}}];")
-        elif prop_spin == 1:
-            if prop.mass and prop.mass > 0:
-                lines.append(f"amp = I ({g})^2 FAD[{{{q}, {prop_mass}}}];")
-            else:
-                lines.append(f"amp = I ({g})^2 FAD[{q}];")
-        else:
-            lines.append(f"amp = I ({g})^2 FAD[{{{q}, {prop_mass}}}];")
-
-        return "\n".join(lines) + "\n"
-
-    def _amplitude_ffff_vector(
-        self, diagram: Diagram, mom_map: Dict[str, str],
-        channel: Channel, lines: List[str]
-    ) -> str:
-        """e+e- -> mu+mu- style: fermion pair via vector boson."""
-        i0 = diagram.initial[0]
-        i1 = diagram.initial[1]
-        f0 = diagram.final[0]
-        f1 = diagram.final[1]
-        p1 = mom_map["initial_0"]
-        p2 = mom_map["initial_1"]
-        p3 = mom_map["final_0"]
-        p4 = mom_map["final_1"]
-
-        prop = diagram.propagators[0]
-        prop_mass = "mProp0"
-
-        # Initial-state vertex (vertices[0])
-        v0 = diagram.vertices[0] if diagram.vertices else None
-        g0 = _coupling_value(v0, diagram.couplings) if v0 else "g"
-        vtype0 = (v0.type.lower() if v0 else "").replace("-", "").replace("_", "")
-
-        # Final-state vertex: use vertices[1] if available, else reuse vertices[0]
-        v1 = diagram.vertices[1] if len(diagram.vertices) >= 2 else v0
-        g1 = _coupling_value(v1, diagram.couplings) if v1 else "g"
-        vtype1 = (v1.type.lower() if v1 else "").replace("-", "").replace("_", "")
-
-        mu = "mu"  # Lorentz index on propagator
-
-        # Determine spinor ordering for initial state
-        ubar_i, v_i = self._order_fermion_pair_incoming(i0, i1, p1, p2)
-        # Final state
-        ubar_f, v_f = self._order_fermion_pair(f0, f1, p3, p4, "outgoing")
-
-        # Build gamma structures for both vertices
-        gamma_str_init = self._vff_gamma_structure(vtype0, g0, mu)
-        gamma_str_final = self._vff_gamma_structure(vtype1, g1, "nu")
-
-        if channel == Channel.S:
-            lines.append(f"(* s-channel: ({i0.label} {i1.label}) -> propagator -> ({f0.label} {f1.label}) *)")
-            if prop.mass and prop.mass > 0:
-                prop_expr = f"(-MTD[{mu}, nu] + FVD[{p1}+{p2}, {mu}] FVD[{p1}+{p2}, nu]/{prop_mass}^2) FAD[{{{p1}+{p2}, {prop_mass}}}]"
-            else:
-                prop_expr = f"(-MTD[{mu}, nu]) FAD[{p1}+{p2}]"
-
-            lines.append(
-                f"amp = ({ubar_i} . ({gamma_str_init}) . {v_i}) "
-                f"({prop_expr}) "
-                f"({ubar_f} . ({gamma_str_final}) . {v_f});"
-            )
-        elif channel == Channel.T:
-            lines.append(f"(* t-channel *)")
-            if prop.mass and prop.mass > 0:
-                prop_expr = f"(-MTD[{mu}, nu] + FVD[{p1}-{p3}, {mu}] FVD[{p1}-{p3}, nu]/{prop_mass}^2) FAD[{{{p1}-{p3}, {prop_mass}}}]"
-            else:
-                prop_expr = f"(-MTD[{mu}, nu]) FAD[{p1}-{p3}]"
-
-            gamma_str_t_init = self._vff_gamma_structure(vtype0, g0, mu)
-            gamma_str_t_final = self._vff_gamma_structure(vtype1, g1, "nu")
-            lines.append(
-                f"amp = ({ubar_f} . ({gamma_str_t_init}) . SpinorU[{p1}, m{_safe_symbol(i0.label)}]) "
-                f"({prop_expr}) "
-                f"(SpinorUBar[{p4}, m{_safe_symbol(f1.label)}] . ({gamma_str_t_final}) . {v_i});"
-            )
-        else:
-            # Default to s-channel
-            if prop.mass and prop.mass > 0:
-                prop_expr = f"(-MTD[{mu}, nu] + FVD[{p1}+{p2}, {mu}] FVD[{p1}+{p2}, nu]/{prop_mass}^2) FAD[{{{p1}+{p2}, {prop_mass}}}]"
-            else:
-                prop_expr = f"(-MTD[{mu}, nu]) FAD[{p1}+{p2}]"
-
-            lines.append(
-                f"amp = ({ubar_i} . ({gamma_str_init}) . {v_i}) "
-                f"({prop_expr}) "
-                f"({ubar_f} . ({gamma_str_final}) . {v_f});"
-            )
-
-        return "\n".join(lines) + "\n"
-
-    def _amplitude_scattering_contact(
-        self, diagram: Diagram, mom_map: Dict[str, str], lines: List[str]
-    ) -> str:
-        """Contact 4-point interaction amplitude."""
-        i0 = diagram.initial[0]
-        i1 = diagram.initial[1]
-        f0 = diagram.final[0]
-        f1 = diagram.final[1]
-        p1 = mom_map["initial_0"]
-        p2 = mom_map["initial_1"]
-        p3 = mom_map["final_0"]
-        p4 = mom_map["final_1"]
-        vertex = diagram.vertices[0] if diagram.vertices else None
-        g = _coupling_value(vertex, diagram.couplings) if vertex else "g"
-
-        spins = sorted([(p.spin or 0) for p in [i0, i1, f0, f1]])
-
-        if spins == [0, 0, 0, 0]:
-            lines.append(f"amp = I ({g});")
-        elif spins == [0.5, 0.5, 0.5, 0.5]:
-            mu = "mu"
-            ubar_i, v_i = self._order_fermion_pair_incoming(i0, i1, p1, p2)
-            ubar_f, v_f = self._order_fermion_pair(f0, f1, p3, p4, "outgoing")
-            lines.append(
-                f"amp = ({ubar_i} . (I ({g}) GAD[{mu}]) . {v_i}) "
-                f"({ubar_f} . (I ({g}) GAD[{mu}]) . {v_f});"
-            )
-        else:
-            lines.append(f"amp = I ({g})^2;")
-
-        return "\n".join(lines) + "\n"
+        The previous implementation covered exactly one exchange case
+        (all-fermion externals with a vector mediator, s/t only -- u fell
+        through to s) and emitted a structurally empty
+        ``amp = I g^2 FAD[...]`` for everything else, which produced a
+        confident wrong number rather than an error. `scattering` covers
+        the full space and raises `UnsupportedScattering` outside it.
+        """
+        channel = self._infer_channel(diagram, ProcessType.SCATTERING_2TO2)
+        return _build_scattering_amplitude(self, diagram, channel)
 
     # ------------------------------------------------------------------
     # Fermion ordering helpers
@@ -1123,42 +1039,6 @@ class FeynCalcCodeGenerator:
 
         return "\n".join(lines) + "\n"
 
-    def _kinematics_scattering(
-        self, diagram: Diagram, mom_map: Dict[str, str], sqrt_s: float
-    ) -> str:
-        """Mandelstam kinematics for 2->2 scattering.
-
-        Uses FCClearScalarProducts before SetMandelstam so FeynCalc
-        starts with a clean slate and the Mandelstam relations resolve properly.
-        """
-        i0 = diagram.initial[0]
-        i1 = diagram.initial[1]
-        f0 = diagram.final[0]
-        f1 = diagram.final[1]
-
-        m1 = _mass_symbol(i0, 0)
-        m2 = _mass_symbol(i1, 1)
-        m3 = _mass_symbol(f0, 0)
-        m4 = _mass_symbol(f1, 1)
-
-        p1 = mom_map["initial_0"]
-        p2 = mom_map["initial_1"]
-        p3 = mom_map["final_0"]
-        p4 = mom_map["final_1"]
-
-        lines = [
-            "(* Step 5: Mandelstam kinematics *)",
-            f"FCClearScalarProducts[];",
-            f"SetMandelstam[s, t, u, {p1}, {p2}, -{p3}, -{p4}, {m1}, {m2}, {m3}, {m4}];",
-            f"ampSqKin = ampSq // Simplify;",
-        ]
-
-        return "\n".join(lines) + "\n"
-
-    # ------------------------------------------------------------------
-    # Observables
-    # ------------------------------------------------------------------
-
     def _width_formula(self, diagram: Diagram, proc: ProcessType, mom_map: Dict[str, str]) -> str:
         """Compute partial decay width."""
         from tools.nda.simple_diagram import compute_symmetry_factor
@@ -1191,57 +1071,38 @@ class FeynCalcCodeGenerator:
 
         return "\n".join(lines) + "\n"
 
-    def _cross_section_formula(
-        self, diagram: Diagram, mom_map: Dict[str, str], sqrt_s: float
+    def _kinematics_scattering(
+        self, diagram: Diagram, mom_map: Dict[str, str],
+        sqrt_s: Optional[float] = None
     ) -> str:
-        """Compute total cross section for 2->2."""
-        i0 = diagram.initial[0]
-        i1 = diagram.initial[1]
-        f0 = diagram.final[0]
-        f1 = diagram.final[1]
+        """Delegated: explicit ScalarProducts in (s, t), u eliminated on shell.
 
-        m1 = _mass_symbol(i0, 0)
-        m2 = _mass_symbol(i1, 1)
-        m3 = _mass_symbol(f0, 0)
-        m4 = _mass_symbol(f1, 1)
+        Replaces the old ``SetMandelstam`` block, which left ``u`` alive as
+        an independent symbol and mixed a NUMERIC sqrt_s into the flux
+        prefactor while |M|^2 still carried a SYMBOLIC s -- so the two never
+        met and ``N[sigma]`` never resolved.
+        """
+        return _scattering_kinematics(diagram)
 
-        # Spin averaging for initial state
-        s0 = i0.spin if i0.spin is not None else 0.5
-        s1 = i1.spin if i1.spin is not None else 0.5
-        n_spin = int((2*s0 + 1) * (2*s1 + 1))
+    def _cross_section_formula(
+        self, diagram: Diagram, mom_map: Dict[str, str],
+        sqrt_s: Optional[float] = None
+    ) -> str:
+        """Delegated: the 2->2 master formula, symbolic in s.
 
-        lines = [
-            "(* Step 6: Total cross section *)",
-            f"sqrtS = {sqrt_s};",
-            f"sVal = sqrtS^2;",
-            f"",
-            f"(* Kallen function *)",
-            f"kallen[a_, b_, c_] := a^2 + b^2 + c^2 - 2 a b - 2 a c - 2 b c;",
-            f"",
-            f"(* Initial and final state momenta in CM frame *)",
-            f"pI = Sqrt[kallen[sVal, {m1}^2, {m2}^2]] / (2 sqrtS);",
-            f"pF = Sqrt[kallen[sVal, {m3}^2, {m4}^2]] / (2 sqrtS);",
-            f"",
-            f"(* Spin averaging factor *)",
-            f"nInit = {n_spin};",
-            f"colorFactor = {_fmt_mma(diagram.color_factor)};",
-            f"",
-            f"(* dsigma/dt = |M|^2 / (64 pi s pI^2) *)",
-            f"(* Integrate over t: tMin to tMax *)",
-            f"tMin = ({m1}^2 + {m3}^2) - (sVal + {m1}^2 - {m2}^2)(sVal + {m3}^2 - {m4}^2)/(2 sVal) - 2 pI pF;",
-            f"tMax = ({m1}^2 + {m3}^2) - (sVal + {m1}^2 - {m2}^2)(sVal + {m3}^2 - {m4}^2)/(2 sVal) + 2 pI pF;",
-            f"",
-            f"sigma = colorFactor / nInit * Integrate[ampSqKin / (64 Pi sVal pI^2), {{t, tMin, tMax}}];",
-            f"sigma = sigma // Simplify;",
-        ]
-
-        return "\n".join(lines) + "\n"
+        Restores the identical-particle symmetry factor (absent before, which
+        made phi phi -> phi phi come out exactly 2x too large) and the
+        massless-vector polarisation count.
+        """
+        return _scattering_cross_section(
+            diagram, integrate_timeout_s=self.integrate_timeout_s)
 
     # ------------------------------------------------------------------
     # Numerical evaluation + markers
     # ------------------------------------------------------------------
 
-    def _numerical_eval(self, diagram: Diagram, proc: ProcessType) -> str:
+    def _numerical_eval(self, diagram: Diagram, proc: ProcessType,
+                        sqrt_s: Optional[float] = None) -> str:
         """Emit numerical evaluation, symbolic extraction, and LaTeX markers.
 
         Emits three categories of structured output:
@@ -1277,14 +1138,28 @@ class FeynCalcCodeGenerator:
         else:
             lines.extend([
                 '',
-                '(* Cross section — symbolic and numerical *)',
+                '(* Cross section — symbolic in s *)',
                 'Print["SYMBOLIC_RESULT[sigma]: ", sigma];',
                 'Print["LATEX_RESULT[sigma]: ", ToString[TeXForm[sigma]]];',
-                'sigmaNum = N[sigma];',
-                'Print["NUMERICAL_RESULT[sigma_GeV2]: ", sigmaNum];',
-                '(* Convert to nb: 1 GeV^-2 = 0.3894e6 nb *)',
-                'Print["NUMERICAL_RESULT[sigma_nb]: ", sigmaNum * 0.3894*10^6];',
+                'Print["SYMBOLIC_RESULT[dSigmaDt]: ", dSigmaDt];',
             ])
+            if sqrt_s is not None:
+                lines.extend([
+                    '',
+                    '(* Numerical evaluation at the requested sqrt(s) *)',
+                    f'sigmaNum = N[sigma /. s -> ({_fmt_mma(sqrt_s)})^2];',
+                    '(* A well-formed symbolic sigma can still evaluate to',
+                    '   Undefined when the t-endpoints cancel; fall back to',
+                    '   substituting first and integrating numerically. *)',
+                    'If[!NumericQ[sigmaNum] || !FreeQ[sigmaNum, Undefined] ||',
+                    '   !FreeQ[sigmaNum, Indeterminate] || !FreeQ[sigmaNum, DirectedInfinity],',
+                    f'  sigmaNum = sigmaNIntegrate[{{s -> ({_fmt_mma(sqrt_s)})^2}}]];',
+                    'Print["NUMERICAL_RESULT[sigma_GeV2]: ", sigmaNum];',
+                    GEV2_TO_BARN_COMMENT,
+                    'Print["NUMERICAL_RESULT[sigma_pb]: ", sigmaNum * GeV2ToPb];',
+                    'Print["NUMERICAL_RESULT[sigma_fb]: ", sigmaNum * GeV2ToPb * 1000];',
+                    'Print["NUMERICAL_RESULT[sigma_nb]: ", sigmaNum * GeV2ToPb / 1000];',
+                ])
 
         lines.append('Print["STATUS: complete"];')
 
@@ -1295,22 +1170,45 @@ class FeynCalcCodeGenerator:
     # ------------------------------------------------------------------
 
     def _infer_channel(self, diagram: Diagram, proc: ProcessType) -> Channel:
-        """Infer s/t/u channel for 2->2 scattering."""
+        """Resolve the s/t/u channel for a 2->2 diagram.
+
+        The channel is a PROPERTY OF THE DIAGRAM, not something a topology
+        spec determines: the same four external legs and the same mediator
+        describe three different diagrams. The old heuristic returned
+        ``Channel.S`` unconditionally, so every t- and u-channel request was
+        silently computed as an s-channel one.
+
+        Resolution order: an explicit ``channel`` on the generator, then a
+        ``channel`` key carried by the diagram's topology string, then
+        s-channel with a recorded assumption.
+        """
         if proc != ProcessType.SCATTERING_2TO2:
             return Channel.S
 
         if not diagram.propagators:
             return Channel.CONTACT
 
-        # Simple heuristic: if initial pair has a flavor-changing propagator
-        # it's s-channel. Otherwise check particle labels.
-        prop = diagram.propagators[0]
+        explicit = self.channel
+        if explicit is None:
+            topo = (diagram.topology or "").lower()
+            for name in ("t_channel", "u_channel", "s_channel"):
+                if name in topo:
+                    explicit = name[0]
+                    break
 
-        # If propagator spin matches a neutral heavy boson, likely s-channel
-        if prop.spin == 1 or prop.spin is None:
-            return Channel.S
+        if explicit is not None:
+            key = str(explicit).strip().lower()
+            try:
+                return {"s": Channel.S, "t": Channel.T, "u": Channel.U,
+                        "contact": Channel.CONTACT}[key]
+            except KeyError:
+                raise UnsupportedScattering(
+                    f"Unknown scattering channel {explicit!r}; "
+                    "expected one of s, t, u, contact."
+                )
 
-        return Channel.S  # Default
+        self._channel_assumed = True
+        return Channel.S
 
     # ------------------------------------------------------------------
     # Assembly
@@ -1357,7 +1255,8 @@ class SymbolicFeynCalcCodeGenerator(FeynCalcCodeGenerator):
         ]
         return "\n".join(lines) + "\n"
 
-    def _numerical_eval(self, diagram: Diagram, proc: ProcessType) -> str:
+    def _numerical_eval(self, diagram: Diagram, proc: ProcessType,
+                        sqrt_s: Optional[float] = None) -> str:
         """Emit only symbolic and LaTeX results, skip numerical evaluation."""
         lines = ["(* Step 7: Symbolic extraction (no numerical evaluation) *)"]
 
@@ -1383,6 +1282,7 @@ class SymbolicFeynCalcCodeGenerator(FeynCalcCodeGenerator):
                 '(* Cross section — symbolic only *)',
                 'Print["SYMBOLIC_RESULT[sigma]: ", sigma];',
                 'Print["LATEX_RESULT[sigma]: ", ToString[TeXForm[sigma]]];',
+                'Print["SYMBOLIC_RESULT[dSigmaDt]: ", dSigmaDt];',
             ])
 
         # In-script simplifications (optional)

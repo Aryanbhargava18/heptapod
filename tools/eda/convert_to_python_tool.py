@@ -23,7 +23,7 @@ from .symbolic_to_python import (
     mathematica_to_callable,
     extract_variables,
 )
-from .result_utils import load_expression_from_sidecar
+from tools.wolfram import load_expression_from_sidecar
 from tools.logging.findings import append_finding
 
 

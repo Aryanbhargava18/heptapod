@@ -28,8 +28,9 @@ from typing import Optional, Dict, Any, List
 from orchestral.tools.base.tool import BaseTool
 from orchestral.tools.base.field_utils import RuntimeField, StateField
 
-from .result_utils import load_expression_from_sidecar
-from .wolfram_runner import WolframRunner
+from tools.wolfram import load_expression_from_sidecar
+from tools.wolfram import WolframRunner
+from .latex_symbols import clean_latex_symbols
 from tools.logging.findings import append_finding
 
 
@@ -162,7 +163,8 @@ class SimplifyResult(BaseTool):
         code = self._generate_mathematica(expr_str)
 
         # --- Run via WolframRunner ---
-        runner = WolframRunner(timeout_sec=self.timeout)
+        runner = WolframRunner(timeout_sec=self.timeout,
+                               latex_postprocess=clean_latex_symbols)
 
         if self.script_name:
             name = self.script_name
@@ -453,7 +455,8 @@ class SimplifyResultBatch(BaseTool):
         scripts_dir.mkdir(parents=True, exist_ok=True)
         save_path = str(scripts_dir / name)
 
-        runner = WolframRunner(timeout_sec=spec_timeout)
+        runner = WolframRunner(timeout_sec=spec_timeout,
+                               latex_postprocess=clean_latex_symbols)
         result = runner.run_code(
             code=code,
             save_path=save_path,

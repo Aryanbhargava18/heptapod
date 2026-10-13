@@ -21,8 +21,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tools.eda.run_wolfram_tool import RunWolframScript
-from tools.eda.wolfram_runner import WolframRunner
+from tools.wolfram import RunWolframScript, WolframRunner, resolve_wolframscript
 
 
 def _check_wolfram():
@@ -35,11 +34,16 @@ def _check_wolfram():
 
 
 def _make_tool(tmp_dir):
-    """Create a RunWolframScript tool instance."""
-    import config
+    """Create a RunWolframScript tool instance.
+
+    Resolves the executable the same way the runner does rather than reading
+    config.wolframscript_path directly: the shipped config carries the
+    placeholder "/path/to/wolframscript", which used to make every test here
+    skip (and report PASS) on a machine that has Wolfram installed.
+    """
     return RunWolframScript(
         base_directory=tmp_dir,
-        wolframscript_path=config.wolframscript_path,
+        wolframscript_path=resolve_wolframscript(),
     )
 
 
@@ -127,10 +131,14 @@ def test_script_saving():
         shutil.rmtree(tmp_dir)
 
 
-def test_feyncalc_computation():
-    """Test FeynCalc computation with symbolic output."""
+def test_symbolic_computation():
+    """Symbolic result parsing, with no Wolfram package loaded at all.
+
+    Deliberately uses only kernel builtins: this package is generic, so its
+    own suite must not require any add-on package to be installed.
+    """
     print("=" * 60)
-    print("Testing FeynCalc computation")
+    print("Testing symbolic computation (no packages)")
     print("=" * 60)
 
     skip = _check_wolfram()
@@ -143,20 +151,21 @@ def test_feyncalc_computation():
     try:
         tool = _make_tool(tmp_dir)
         tool.code = (
-            '<< FeynCalc`\n'
-            'res = DiracTrace[GSD[p].GSD[q]] // DiracSimplify;\n'
-            'Print["SYMBOLIC_RESULT[trace]: ", res]\n'
+            'res = Factor[x^3 - 6 x^2 + 11 x - 6];\n'
+            'Print["SYMBOLIC_RESULT[factored]: ", res]\n'
             'Print["STATUS: complete"]\n'
         )
         result = tool._run()
         data = json.loads(result)
+        factored = data.get("symbolic", {}).get("factored", "")
         ok = (
             data["success"]
-            and "symbolic_results" in data
-            and "trace" in data["symbolic_results"]
+            and "factored" in data.get("symbolic", {})
             and "stdout" not in data
+            # (x-1)(x-2)(x-3) in whatever order Wolfram prints it
+            and all(t in factored for t in ("-1", "-2", "-3"))
         )
-        print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: FeynCalc computation")
+        print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: symbolic computation")
         print()
         return ok
     finally:
@@ -184,10 +193,10 @@ def test_numerical_output():
         )
         result = tool._run()
         data = json.loads(result)
-        pi_val = data["numerical_results"]["pi"]
+        pi_val = data["numerical"]["pi"]
         if isinstance(pi_val, str):
             pi_val = float(pi_val)
-        ok = data["success"] and "numerical_results" in data and abs(pi_val - 3.14159265) < 0.001
+        ok = data["success"] and "numerical" in data and abs(pi_val - 3.14159265) < 0.001
         print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: numerical output (pi = {pi_val})")
         print()
         return ok
@@ -250,11 +259,11 @@ def test_latex_output():
         data = json.loads(result)
         ok = (
             data["success"]
-            and "latex_results" in data
-            and "test" in data["latex_results"]
+            and "latex" in data
+            and "test" in data["latex"]
         )
         if ok:
-            latex_str = data["latex_results"]["test"]
+            latex_str = data["latex"]["test"]
             ok = "frac" in latex_str or "pi" in latex_str.lower()
         print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: LaTeX output")
         print()
@@ -301,7 +310,7 @@ def run_all_tests():
         ("Missing code", test_missing_code),
         ("Simple execution", test_simple_execution),
         ("Script saving", test_script_saving),
-        ("FeynCalc computation", test_feyncalc_computation),
+        ("Symbolic computation", test_symbolic_computation),
         ("Numerical output", test_numerical_output),
         ("Stdout kept without parsed results", test_stdout_kept_without_parsed_results),
         ("LaTeX output", test_latex_output),
