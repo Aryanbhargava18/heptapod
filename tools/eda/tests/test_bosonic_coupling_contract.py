@@ -171,10 +171,30 @@ def test_the_error_carries_a_corrected_call():
 # configuration, and 2.9.1's behaviour here must not regress.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("vtype", ["svv", "anything-at-all", "S-V-V", "xyz"])
-def test_bosonic_type_strings_remain_unconstrained(vtype):
-    code = _code("svv", "g", vtype=vtype)
-    assert code, f"bosonic dispatch rejected type {vtype!r}"
+@pytest.mark.parametrize("vtype", ["svv", "S-V-V", "contact", "field-strength"])
+def test_bosonic_type_names_are_a_closed_set(vtype):
+    """Bosonic type names are a CLOSED SET per spin configuration.
+
+    This asserted the opposite -- that any string was accepted -- on the
+    reasoning that the bosonic branches dispatch on spins, so the name
+    carries nothing. That reasoning is what let a fermion decay declared
+    with spin 1 on both fermions name its vertex "left_vector" and receive
+    the triple-gauge rule, scoring 0.04 on a confident width for a different
+    process. An unrecognised name is now refused with the keys valid for the
+    declared spins, and the fermionic configurations' keys alongside, since a
+    caller refused here usually wanted one of those.
+
+    The accepted sets stay generous -- the configuration's letter-string, a
+    curated list, and every name already closed for VFF/SFF -- so names in
+    circulation via the `-3pt` spellings keep working.
+    """
+    assert _code("svv", "g", vtype=vtype), f"rejected accepted type {vtype!r}"
+
+
+@pytest.mark.parametrize("vtype", ["anything-at-all", "xyz", "left_vector"])
+def test_an_unrecognised_bosonic_name_is_refused(vtype):
+    with pytest.raises(UnknownVertexType):
+        _code("svv", "g", vtype=vtype)
 
 
 @pytest.mark.parametrize("cfg", sorted(CONFIGS))
