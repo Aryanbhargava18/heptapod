@@ -15,7 +15,7 @@ background task.
 
 Layout (all under ``<base_directory>/.jobs/<job_id>/``):
     spec.json    what to run (tool, args, state config)     [written once]
-    status.json  queued -> running -> done | failed          [atomic updates]
+    status.json  queued -> running -> done | failed | cancelled   [atomic]
     log.txt      runner stdout/stderr (tool prints, tracebacks)
     result.json  the tool's verbatim output string, once finished
 
@@ -43,8 +43,11 @@ import json
 import os
 import re
 import secrets
+import signal
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -63,12 +66,20 @@ WHITELIST: Dict[str, Tuple[str, str]] = {
     "validateufomodel": ("tools.feynrules.validate_tool", "ValidateUFOModelTool"),
     "madgraphfromruncard": ("tools.mg5.mg5", "MadGraphFromRunCardTool"),
     "reverselagrangian": ("tools.reverse.reverse_tool", "ReverseLagrangianTool"),
+    "pythiafromruncard": ("tools.pythia", "PythiaFromRunCardTool"),
+    "delphesfromhepmc": ("tools.delphes.delphes", "DelphesFromHepMCTool"),
     # Fast and dependency-free — used by the offline test suite to exercise
     # the full submit -> run -> result path without Wolfram/MG5.
     "audittrail": ("tools.logging.audit_tool", "AuditTrailTool"),
 }
 
 JOB_ID_RE = re.compile(r"^job_\d{8}_\d{6}_[0-9a-f]{6}$")
+
+TERMINAL_STATES = ("done", "failed", "cancelled")
+
+# A runner marks its job running within a second or two of being started. A
+# job still queued with no pid after this long never got a runner.
+QUEUED_GRACE_SECONDS = 60
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -193,7 +204,7 @@ def submit(
 
     log_fh = open(os.path.join(jdir, "log.txt"), "ab")
     try:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [sys.executable, "-m", "tools.jobs.runner", jdir],
             cwd=str(_REPO_ROOT),
             start_new_session=True,
@@ -202,10 +213,145 @@ def submit(
             stderr=subprocess.STDOUT,
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
+    except OSError as e:
+        set_status(jdir, state="failed", finished=_utcnow_iso(),
+                   error=f"runner failed to start: {type(e).__name__}: {e}")
+        raise
     finally:
         log_fh.close()
 
+    # Reap the runner when it exits. Left unreaped it stays a zombie until the
+    # next Popen, and kill(pid, 0) succeeds on a zombie, so a runner killed
+    # outright (OOM, SIGKILL) would read as alive and its job as running.
+    # Not SIGCHLD=SIG_IGN: that is process-wide and would break the exit
+    # codes of every other tool's subprocess.run in this server.
+    threading.Thread(target=proc.wait, name=f"reap-{job_id}", daemon=True).start()
+
     return {"job_id": job_id, "job_dir": os.path.join(JOBS_DIRNAME, job_id)}
+
+
+def set_status(jdir: str, **updates) -> None:
+    """Read-modify-write status.json. Callers serialise their own writers."""
+    path = os.path.join(jdir, "status.json")
+    st = read_json(path) or {"schema": STATUS_SCHEMA}
+    st.update(updates)
+    write_json_atomic(path, st)
+
+
+def _age_seconds(iso: Optional[str]) -> Optional[float]:
+    try:
+        return time.time() - datetime.fromisoformat(iso).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def effective_status(jdir: str) -> Dict[str, Any]:
+    """status.json, corrected for runners that died without saying so."""
+    st = read_json(os.path.join(jdir, "status.json")) or {}
+    state = st.get("state")
+    if state == "running" and not pid_alive(st.get("pid")):
+        st["state"] = "failed"
+        st["error"] = "runner process died before finishing (stale job)"
+    elif state == "queued" and not st.get("pid"):
+        age = _age_seconds(st.get("submitted"))
+        if age is not None and age > QUEUED_GRACE_SECONDS:
+            st["state"] = "failed"
+            st["error"] = (f"runner never started ({int(age)}s after submit); "
+                           "see log_tail")
+    return st
+
+
+def _fmt_seconds(sec: float) -> str:
+    sec = int(round(sec))
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}h{m:02d}m" if h else (f"{m}m{s:02d}s" if m else f"{s}s")
+
+
+def render_progress(progress: Dict[str, Any], started: Optional[str],
+                    width: int = 24) -> Dict[str, Any]:
+    """Add fraction, ETA and a text bar to a status.json progress record.
+
+    The ETA assumes a steady rate since the job started, so it is rough for
+    runs whose stages differ in speed (MG5's survey vs refine).
+    """
+    out = dict(progress)
+    done, total = progress.get("done"), progress.get("total")
+    unit = progress.get("unit") or ""
+    msg = progress.get("message") or ""
+    if done is not None and total:
+        frac = max(0.0, min(1.0, float(done) / float(total)))
+        out["fraction"] = round(frac, 4)
+        elapsed = _age_seconds(started)
+        eta = None
+        if elapsed and 0 < frac < 1:
+            eta = elapsed * (1 - frac) / frac
+            out["eta_seconds"] = int(eta)
+        filled = int(round(frac * width))
+        bar = f"[{'#' * filled}{'-' * (width - filled)}] {frac:4.0%}"
+        bar += f"  {done:g}/{total:g} {unit}".rstrip()
+        if eta is not None:
+            bar += f"  ETA {_fmt_seconds(eta)}"
+        out["bar"] = f"{bar}  {msg}".rstrip() if msg else bar
+    elif msg or done is not None:
+        count = f"{done:g} {unit}".strip() if done is not None else ""
+        out["bar"] = " · ".join(p for p in (msg, count) if p)
+    return out
+
+
+def _signal_group(pid: int, sig: int) -> bool:
+    """Signal the runner's process group; False if it is already gone.
+
+    The runner is started in its own session, so its group id is its pid. The
+    check guards against a reused pid that now leads some unrelated group.
+    """
+    try:
+        if os.getpgid(pid) != pid:
+            return False
+        os.killpg(pid, sig)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+def cancel(base_directory: str, job_id: str, grace_seconds: float = 5.0) -> Dict[str, Any]:
+    """Stop a queued or running job and everything its tool started.
+
+    SIGTERM goes to the runner's whole process group (MG5 and its madevent
+    workers, a wolframscript kernel), and the runner records the job as
+    cancelled. A runner that does not finish within ``grace_seconds`` is
+    SIGKILLed along with its group and marked cancelled here instead.
+
+    Children that start their own session (the blank-slate agent CLI) are out
+    of the group's reach; the tool that started them has to stop them itself.
+    """
+    jdir = job_dir(base_directory, job_id)
+    if jdir is None or not os.path.isdir(jdir):
+        raise FileNotFoundError(job_id)
+    st = effective_status(jdir)
+    state, pid = st.get("state"), st.get("pid")
+    if state in TERMINAL_STATES:
+        return {"job_id": job_id, "state": state, "already_finished": True}
+
+    if state == "queued" and not pid:
+        # The runner checks for this before it starts the tool.
+        set_status(jdir, state="cancelled", finished=_utcnow_iso(),
+                   error="cancelled before the runner started")
+        return {"job_id": job_id, "state": "cancelled", "already_finished": False}
+
+    _signal_group(pid, signal.SIGTERM)
+    deadline = time.time() + grace_seconds
+    while time.time() < deadline:
+        if (read_json(os.path.join(jdir, "status.json")) or {}).get("state") in TERMINAL_STATES:
+            break
+        time.sleep(0.2)
+    else:
+        _signal_group(pid, signal.SIGKILL)
+        set_status(jdir, state="cancelled", exit_code=-signal.SIGKILL,
+                   finished=_utcnow_iso(),
+                   error=f"cancelled; runner killed after a {grace_seconds:g}s grace period")
+    final = (read_json(os.path.join(jdir, "status.json")) or {}).get("state")
+    return {"job_id": job_id, "state": final, "already_finished": False}
 
 
 def list_jobs(base_directory: str) -> list:
@@ -217,13 +363,16 @@ def list_jobs(base_directory: str) -> list:
     for name in sorted(os.listdir(root), reverse=True):
         if not JOB_ID_RE.match(name):
             continue
-        st = read_json(os.path.join(root, name, "status.json")) or {}
-        out.append(
-            {
-                "job_id": name,
-                "tool": st.get("tool"),
-                "state": st.get("state", "unknown"),
-                "submitted": st.get("submitted"),
-            }
-        )
+        st = effective_status(os.path.join(root, name))
+        row = {
+            "job_id": name,
+            "tool": st.get("tool"),
+            "state": st.get("state", "unknown"),
+            "submitted": st.get("submitted"),
+        }
+        if st.get("state") == "running" and st.get("progress"):
+            bar = render_progress(st["progress"], st.get("started")).get("bar")
+            if bar:
+                row["progress"] = bar
+        out.append(row)
     return out

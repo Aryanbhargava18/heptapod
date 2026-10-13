@@ -89,6 +89,20 @@ class ComputeSymbolicAmplitude(BaseTool):
         # V-A vertex
         {"type": "vector-axial", "coupling": {"gV": "gV_e", "gA": "gA_e"}}
 
+    THE `coupling` COLUMN ABOVE IS A CONTRACT, not merely a default. The type
+    decides the Feynman rule and the coupling must supply exactly the names
+    that rule takes; a mismatch RAISES rather than being reinterpreted. So
+    `{"type": "vector", "coupling": {"g": "g"}}` is the plain vector rule (a
+    one-entry dict is unambiguous), while `{"type": "chiral", "coupling":
+    {"gV": ..., "gA": ...}}` is an error naming gL, gR as expected.
+
+    Until 2.15.2 the dispatch inferred the vertex from the coupling's SHAPE
+    instead: ANY dict meant chiral, wherever it appeared in the chain, which
+    silently overrode six legitimate types. Asking for a plain vector vertex
+    while writing the coupling as a dict returned a chiral rule in gL/gR --
+    symbols the caller had not supplied, so the number went missing with no
+    error. The type is authoritative now.
+
     The generated script is always saved to a .wl file. To execute it
     (after adding numerical substitutions), pass the script_path to
     RunWolframScript.

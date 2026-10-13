@@ -10,15 +10,21 @@ All tests are offline (no Wolfram / MG5 / network): validation failures are
 exercised against the real ValidateUFOModelTool class (import only), and the full
 submit -> detached runner -> result round-trip uses the dependency-free
 AuditTrailTool. The detached subprocess is real.
+
+Cancellation, the watchdog and progress need a tool that runs for a while and
+starts a child process. ``_SleepTool`` below is one; it is whitelisted only
+inside the detached test runner (``_HARNESS``), never in the real WHITELIST.
 """
 
 import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).resolve()
@@ -27,10 +33,14 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import tools.jobs.job_manager as jm  # noqa: E402
 from tools.jobs.jobs_tool import (  # noqa: E402
+    CancelJobTool,
     JobResultTool,
     JobStatusTool,
     SubmitJobTool,
 )
+from tools.jobs.progress import report_progress  # noqa: E402
+from orchestral.tools.base.tool import BaseTool  # noqa: E402
+from orchestral.tools.base.field_utils import RuntimeField, StateField  # noqa: E402
 
 _TMPDIRS = []
 
@@ -50,10 +60,85 @@ def _wait(base: str, jid: str, seconds: float = 15.0) -> dict:
     deadline = time.time() + seconds
     while time.time() < deadline:
         st = json.loads(JobStatusTool(base_directory=base, job_id=jid)._run())
-        if st.get("state") in ("done", "failed"):
+        if st.get("state") in jm.TERMINAL_STATES:
             return st
         time.sleep(0.2)
     return st
+
+
+class _SleepTool(BaseTool):
+    """Test-only: runs ``sleep`` as a child, reporting progress as it waits."""
+
+    seconds: int = RuntimeField(description="How long the child sleeps")
+    pid_file: str = RuntimeField(description="Where to write the child's pid")
+    base_directory: str = StateField(description="Base sandbox directory")
+
+    def _run(self) -> str:
+        proc = subprocess.Popen(["sleep", str(self.seconds)])
+        Path(self.pid_file).write_text(str(proc.pid))
+        steps = self.seconds * 5
+        for i in range(steps):
+            try:
+                proc.wait(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                report_progress(self, done=i + 1, total=steps, unit="steps",
+                                message="sleeping")
+        proc.wait()
+        return '{"status": "ok"}'
+
+
+_HARNESS = (
+    "import sys\n"
+    "import tools.jobs.job_manager as jm\n"
+    "jm.WHITELIST['sleeptest'] = ('tools.jobs.test_jobs', '_SleepTool')\n"
+    "from tools.jobs import runner\n"
+    "raise SystemExit(runner.main(sys.argv[1]))\n"
+)
+
+
+def _launch_sleep_job(base: str, seconds: int, max_seconds=None):
+    """Start _SleepTool through the real runner, detached like submit() does."""
+    jid = jm.new_job_id()
+    jdir = jm.job_dir(base, jid)
+    os.makedirs(jdir)
+    pid_file = os.path.join(base, f"{jid}.child")
+    jm.write_json_atomic(os.path.join(jdir, "spec.json"), {
+        "schema": jm.SPEC_SCHEMA, "job_id": jid, "tool": "sleeptest",
+        "args": {"seconds": seconds, "pid_file": pid_file},
+        "state": {"base_directory": base}, "max_seconds": max_seconds,
+        "submitted": datetime.now(timezone.utc).isoformat(),
+    })
+    jm.write_json_atomic(os.path.join(jdir, "status.json"), {
+        "schema": jm.STATUS_SCHEMA, "job_id": jid, "tool": "sleeptest",
+        "state": "queued", "pid": None, "exit_code": None,
+        "submitted": datetime.now(timezone.utc).isoformat(),
+        "started": None, "finished": None, "error": None,
+    })
+    with open(os.path.join(jdir, "log.txt"), "ab") as log:
+        proc = subprocess.Popen(
+            [sys.executable, "-c", _HARNESS, jdir], cwd=str(REPO_ROOT),
+            start_new_session=True, stdout=log, stderr=subprocess.STDOUT)
+    return jid, pid_file, proc
+
+
+def _child_pid(pid_file: str, seconds: float = 10.0):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        try:
+            return int(Path(pid_file).read_text())
+        except (OSError, ValueError):
+            time.sleep(0.1)
+    return None
+
+
+def _gone(pid, seconds: float = 5.0) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if not jm.pid_alive(pid):
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def test_job_id_format() -> bool:
@@ -170,6 +255,127 @@ def test_stale_running_detection() -> bool:
     return ok
 
 
+def test_stale_queued_detection() -> bool:
+    """A job still queued with no runner long after submit reads as failed."""
+    base = _base()
+    jid = jm.new_job_id()
+    jdir = jm.job_dir(base, jid)
+    os.makedirs(jdir)
+    old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    jm.write_json_atomic(os.path.join(jdir, "status.json"), {
+        "schema": jm.STATUS_SCHEMA, "job_id": jid, "tool": "audittrail",
+        "state": "queued", "pid": None, "submitted": old,
+    })
+    got = json.loads(JobStatusTool(base_directory=base, job_id=jid)._run())
+    ok = got["state"] == "failed" and "never started" in (got.get("error") or "")
+    print(f"[{'✓' if ok else '✗'}] test_stale_queued_detection")
+    return ok
+
+
+def test_finished_runner_is_reaped() -> bool:
+    """A finished runner must not linger as a zombie that reads as alive.
+
+    kill(pid, 0) succeeds on a zombie, so without reaping, a runner killed
+    outright would leave its job looking like it is still running.
+    """
+    base = _base()
+    out = json.loads(SubmitJobTool(
+        base_directory=base, tool_name="audittrail",
+        tool_args=json.dumps({"action": "record", "stage": "t",
+                              "summary": "s", "data": "{}"}))._run())
+    st = _wait(base, out["job_id"])
+    ok = st.get("state") == "done" and _gone(st.get("pid"))
+    print(f"[{'✓' if ok else '✗'}] test_finished_runner_is_reaped")
+    return ok
+
+
+def test_progress_reported() -> bool:
+    """report_progress() in a tool shows up in jobstatus as a progress bar."""
+    base = _base()
+    jid, _, proc = _launch_sleep_job(base, seconds=3)
+    bar = None
+    deadline = time.time() + 10
+    while time.time() < deadline and not bar:
+        st = json.loads(JobStatusTool(base_directory=base, job_id=jid)._run())
+        bar = (st.get("progress") or {}).get("bar")
+        time.sleep(0.2)
+    st = _wait(base, jid)
+    proc.wait()
+    ok = bool(bar) and "%" in bar and "steps" in bar and st["state"] == "done"
+    listed = jm.list_jobs(base)
+    ok &= listed and listed[0]["state"] == "done"
+    print(f"[{'✓' if ok else '✗'}] test_progress_reported  ({bar})")
+    return ok
+
+
+def test_cancel_stops_job_and_children() -> bool:
+    base = _base()
+    jid, pid_file, proc = _launch_sleep_job(base, seconds=60)
+    child = _child_pid(pid_file)
+    out = json.loads(CancelJobTool(base_directory=base, job_id=jid)._run())
+    proc.wait(timeout=10)
+    st = json.loads(JobStatusTool(base_directory=base, job_id=jid)._run())
+    res = JobResultTool(base_directory=base, job_id=jid)._run()
+    again = json.loads(CancelJobTool(base_directory=base, job_id=jid)._run())
+    ok = (child is not None and out["state"] == "cancelled"
+          and st["state"] == "cancelled" and _gone(child)
+          and "Job Cancelled" in res and again["already_finished"])
+    print(f"[{'✓' if ok else '✗'}] test_cancel_stops_job_and_children")
+    return ok
+
+
+def test_cancel_queued_job_never_runs() -> bool:
+    base = _base()
+    jid = jm.new_job_id()
+    jdir = jm.job_dir(base, jid)
+    os.makedirs(jdir)
+    jm.write_json_atomic(os.path.join(jdir, "spec.json"), {
+        "schema": jm.SPEC_SCHEMA, "job_id": jid, "tool": "audittrail",
+        "args": {"action": "record", "stage": "t", "summary": "s", "data": "{}"},
+        "state": {"base_directory": base},
+    })
+    jm.write_json_atomic(os.path.join(jdir, "status.json"), {
+        "schema": jm.STATUS_SCHEMA, "job_id": jid, "tool": "audittrail",
+        "state": "queued", "pid": None,
+        "submitted": datetime.now(timezone.utc).isoformat(),
+    })
+    out = json.loads(CancelJobTool(base_directory=base, job_id=jid)._run())
+    from tools.jobs.runner import main as runner_main
+    rc = runner_main(jdir)
+    st = jm.read_json(os.path.join(jdir, "status.json"))
+    ok = (out["state"] == "cancelled" and rc == 0 and st["state"] == "cancelled"
+          and not os.path.exists(os.path.join(jdir, "result.json")))
+    print(f"[{'✓' if ok else '✗'}] test_cancel_queued_job_never_runs")
+    return ok
+
+
+def test_watchdog_stops_job_and_children() -> bool:
+    """max_seconds stops the tool's children too, not just the runner."""
+    base = _base()
+    jid, pid_file, proc = _launch_sleep_job(base, seconds=60, max_seconds=1)
+    child = _child_pid(pid_file)
+    proc.wait(timeout=20)
+    st = json.loads(JobStatusTool(base_directory=base, job_id=jid)._run())
+    ok = (child is not None and st["state"] == "failed"
+          and "watchdog" in (st.get("error") or "") and _gone(child))
+    print(f"[{'✓' if ok else '✗'}] test_watchdog_stops_job_and_children")
+    return ok
+
+
+def test_render_progress() -> bool:
+    started = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+    r = jm.render_progress({"done": 250, "total": 1000, "unit": "events",
+                            "message": "generating"}, started)
+    ok = (r["fraction"] == 0.25 and 80 <= r["eta_seconds"] <= 100
+          and r["bar"].startswith("[######------------------]  25%")
+          and "250/1000 events" in r["bar"] and r["bar"].endswith("generating"))
+    r = jm.render_progress({"done": None, "total": None, "unit": "",
+                            "message": "survey"}, started)
+    ok &= r["bar"] == "survey" and "fraction" not in r
+    print(f"[{'✓' if ok else '✗'}] test_render_progress")
+    return ok
+
+
 def test_listing() -> bool:
     base = _base()
     out = json.loads(SubmitJobTool(
@@ -247,6 +453,13 @@ TESTS = [
     test_listing,
     test_runner_rejects_state_fields_in_args,
     test_runner_rejects_tampered_spec,
+    test_stale_queued_detection,
+    test_finished_runner_is_reaped,
+    test_render_progress,
+    test_progress_reported,
+    test_cancel_stops_job_and_children,
+    test_cancel_queued_job_never_runs,
+    test_watchdog_stops_job_and_children,
 ]
 
 

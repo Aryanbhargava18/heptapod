@@ -87,6 +87,14 @@ def run_blank_agent(
             stdout, stderr = proc.communicate()
             exit_code = 124
             error = f"timed out after {timeout_sec}s"
+        except BaseException:
+            # The agent runs in its own session, out of reach of a signal sent
+            # to ours (a cancelled or timed-out job), so it is stopped here.
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            raise
     except FileNotFoundError as e:
         error = f"engine not found: {e}"
     except OSError as e:

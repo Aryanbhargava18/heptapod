@@ -357,6 +357,8 @@ def _is_massive_propagator(prop: SymbolicPropagator) -> bool:
     if prop.massive is not None:
         return prop.massive
     if prop.mass is not None:
+        if isinstance(prop.mass, str):
+            return True  # a named mass means massive
         return prop.mass > 0
     # Default: assume massive (most interesting propagators are)
     return True
@@ -371,14 +373,46 @@ def _mass_sentinel(is_massive: bool) -> float:
     return 1.0 if is_massive else 0
 
 
+def _mass_for_codegen(p: SymbolicParticle, is_initial: bool = False):
+    """The mass the codegen should carry for an external particle.
+
+    A DECLARED SYMBOLIC MASS IS PRESERVED VERBATIM, because it names the
+    symbol the generated formula is written in (see
+    ``fc_symbols._mass_symbol``). Collapsing it to a sentinel here -- which is
+    what this function used to do unconditionally -- destroyed the caller's
+    name before the generator could ever see it, so the formula came out in
+    ``m<label>`` while the numeric substitution list was built from the
+    caller's ``values`` keys. The two never met: the width came back as an
+    expression, `status` was still `ok`, and five of the ten hepbench
+    `symbolic` 1->2 tasks failed on it.
+
+    Everything else keeps the numeric sentinel (1.0 massive / 0 massless), so
+    the polarisation-sum and propagator checks are unchanged. A string is
+    only carried when the particle is genuinely massive -- a massless
+    particle's mass symbol is 0, and there is nothing to name.
+
+    Consumers of this value in the codegen are string-safe: the Proca check
+    tests ``isinstance(mass, str) or mass > 0``, and ``_is_massless`` tests
+    ``isinstance(mass, (int, float))``.
+    """
+    massive = _is_massive_particle(p, is_initial=is_initial)
+    if massive and isinstance(p.mass, str):
+        return p.mass
+    return _mass_sentinel(massive)
+
+
 def build_diagram_from_symbolic(sym: SymbolicDiagram) -> Diagram:
     """Build a Diagram directly from a SymbolicDiagram without any model database lookup.
 
     Requires spins on all external particles and propagators. Raises ValueError
-    if any spin is missing. Particle masses are set to numeric sentinels
-    (1.0 = massive, 0 = massless) so the codegen's polarisation-sum and
-    propagator checks work correctly. The symbolic codegen derives mass
-    *symbol names* from labels (e.g. ``mH``, ``mf``), not from these values.
+    if any spin is missing.
+
+    A particle that DECLARES a symbolic mass (``"mass": "mS"``) keeps that
+    string, because it names the symbol the generated formula is written in
+    and the caller's ``values`` dict is keyed to it. Otherwise the mass
+    becomes a numeric sentinel (1.0 = massive, 0 = massless) so the codegen's
+    polarisation-sum and propagator checks work, and the symbolic codegen
+    falls back to deriving the name from the label (e.g. ``mH``, ``mf``).
 
     Initial-state particles in a decay are implicitly massive (a particle
     must have mass to decay). Final-state particles default to massless
@@ -413,7 +447,7 @@ def build_diagram_from_symbolic(sym: SymbolicDiagram) -> Diagram:
         Particle(
             label=p.label,
             spin=p.spin,
-            mass=_mass_sentinel(_is_massive_particle(p, is_initial=True)),
+            mass=_mass_for_codegen(p, is_initial=True),
         )
         for p in sym.initial
     ]
@@ -421,7 +455,7 @@ def build_diagram_from_symbolic(sym: SymbolicDiagram) -> Diagram:
         Particle(
             label=p.label,
             spin=p.spin,
-            mass=_mass_sentinel(_is_massive_particle(p, is_initial=False)),
+            mass=_mass_for_codegen(p, is_initial=False),
         )
         for p in sym.final
     ]

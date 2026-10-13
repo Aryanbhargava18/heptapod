@@ -45,6 +45,7 @@ from tools.mg5 import (
     _parse_scan_summary,
     _find_all_lhe_files
 )
+from tools.mg5.mg5 import _count_scan_points, _MG5Progress
 from tools.analysis.conversions import LHEToJSONLTool
 
 # Future: When orchestral-ai PyPI package is fixed, use these imports instead:
@@ -167,6 +168,55 @@ def test_scan_detection():
         print("[✓] Test 1 passed: No scan detected for single run directory")
 
     print("\nAll scan detection tests passed! [✓]\n")
+
+
+def test_progress_reporting():
+    """The log watcher turns MG5's output into progress reports, offline."""
+    print(">> Testing MG5 progress reporting...\n")
+    import tempfile
+
+    scan_card = (MG5_DIR / "test_files" / "cards" / "S1_LQ_RR_pp_lqlq_scan.mg5").read_text()
+    assert _count_scan_points(scan_card) == 3
+    # scan1: parameters move together; a bare scan: multiplies.
+    assert _count_scan_points("set a scan1:[1,2,3]\nset b scan1:[4,5,6]\nset c scan:[7,8]\n") == 6
+    assert _count_scan_points("set a scan:[i for i in range(3)]\n") is None
+    assert _count_scan_points("set nevents 100\n") is None
+    print("[✓] Scan points counted from the card")
+
+    class _Tool:
+        def __init__(self):
+            self.seen = []
+
+        def _stream_callback(self, text):
+            self.seen.append(text)
+
+    log_lines = [
+        "INFO: Generating Helas calls for process: p p > t t~\n",
+        "Generating 100 events with run name run_01\n",
+        "INFO: Running Survey \n",
+        "INFO:  Idle: 1,  Running: 5,  Completed: 0 [ current time: 14h18 ] \n",
+        "INFO:  Idle: 0,  Running: 0,  Completed: 6 [  0.56s  ] \n",
+        "INFO: Combining Events\n",
+        "Generating 100 events with run name run_02\n",
+        "INFO: Running Survey \n",
+    ]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log = os.path.join(tmpdir, "mg5_run.log")
+        open(log, "w").close()
+        tool, watcher = _Tool(), _MG5Progress(log, n_points=2)
+        for line in log_lines:
+            with open(log, "a") as fh:
+                fh.write(line)
+            watcher.poll(tool)
+        watcher.poll(tool, finished=True)
+    assert "run_01 · survey · 6/6 jobs · 0/2 scan points" in tool.seen, tool.seen
+    assert "run_02 · survey · 1/2 scan points" in tool.seen, tool.seen
+    assert tool.seen[-1] == "run_02 · survey · 2/2 scan points", tool.seen
+    print("[✓] Stages, scheduler counts and scan points reported")
+
+    silent = type("Silent", (), {})()
+    _MG5Progress(log, None).poll(silent)  # no callback: a no-op
+    print("\nAll progress reporting tests passed! [✓]\n")
 
 
 def test_scan_generation_and_detection():
@@ -678,6 +728,12 @@ if __name__ == "__main__":
         test_scan_detection()
     except (AssertionError, Exception) as e:
         print(f"\n[✗] test_scan_detection failed: {e}\n")
+        all_passed = False
+
+    try:
+        test_progress_reporting()
+    except (AssertionError, Exception) as e:
+        print(f"\n[✗] test_progress_reporting failed: {e}\n")
         all_passed = False
 
     try:

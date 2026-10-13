@@ -5,9 +5,14 @@
 # Please respect the MCnet Guidelines, see GUIDELINES for details.
 
 Background-job layer: submit long-running heptapod tools as detached jobs,
-poll status, fetch results — "background tasks" for MCP agents.
+poll status and progress, fetch results, cancel — "background tasks" for MCP agents.
 """
 
-from tools.jobs.jobs_tool import JobResultTool, JobStatusTool, SubmitJobTool
+from tools.jobs.jobs_tool import (
+    CancelJobTool,
+    JobResultTool,
+    JobStatusTool,
+    SubmitJobTool,
+)
 
-__all__ = ["SubmitJobTool", "JobStatusTool", "JobResultTool"]
+__all__ = ["SubmitJobTool", "JobStatusTool", "JobResultTool", "CancelJobTool"]
