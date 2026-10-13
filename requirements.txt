@@ -19,6 +19,14 @@ orchestral-ai>=1.10.0
 # even on lean subset installs.
 requests>=2.32.0
 
+# YAML — the llp bundle parses kernel/geometry YAML unconditionally
+# (tools/llp/llp_physics.py imports `yaml` at module top level), and
+# bundle `deps:` only install when the bundle is named at install time,
+# so envs that predate the bundle (or were installed without `[llp]`)
+# would otherwise miss it. YAML data products are a base heptapod
+# convention, not a bundle extra.
+pyyaml>=6.0
+
 # Development Tools (Optional)
 # =============================
 # Uncomment these for development:

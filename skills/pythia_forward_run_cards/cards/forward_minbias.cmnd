@@ -1,0 +1,43 @@
+! forward_minbias.cmnd -- baseline forward light-hadron flux.
+!
+! SoftQCD:inelastic is the deliberate choice: it covers non-diffractive AND
+! diffractive production (codes 101, 103, 104, 105, 106) but excludes elastic
+! (102). Every generated event is therefore one inelastic collision, and the
+! per-event weight is exactly 1/N_gen with no cross-section bookkeeping.
+!
+! Use SoftQCD:all instead only if you need the elastic component for something,
+! and then weight by sigma_gen/(N_gen*sigma_inel) -- at 13.6 TeV elastic is ~22%
+! of the total and produces no hadrons, so weighting SoftQCD:all as 1/N_gen
+! undercounts by ~1.28.
+!
+! Do NOT add HardQCD:* here. Minimum bias already contains hard scatters through
+! the MPI machinery; see SKILL.md section 1.
+
+Beams:idA       = 2212
+Beams:idB       = 2212
+Beams:frameType = 1                  ! collider CM frame
+Beams:eCM       = 13600.             ! CHANGE ME
+
+Tune:pp         = 14                 ! Monash 2013
+
+SoftQCD:inelastic = on
+HardQCD:all       = off
+
+! Harvest parents at production: list every species you intend to count, so it
+! is still in the record when you look. Anything NOT listed decays normally.
+! Do not disable a species whose daughters you also count.
+! 211:mayDecay    = off              ! pi+-
+! 321:mayDecay    = off              ! K+-
+! 411:mayDecay    = off              ! D+-
+! 431:mayDecay    = off              ! D_s+-
+
+Random:setSeed  = on
+Random:seed     = 12345              ! CHANGE ME -- distinct per parallel job
+
+Print:quiet                      = on
+Next:numberCount                 = 0
+Init:showChangedSettings         = off
+Init:showChangedParticleData     = off
+Init:showProcesses               = off
+Init:showMultipartonInteractions = off
+Check:event                      = off   ! turn on while validating

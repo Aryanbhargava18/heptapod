@@ -1,5 +1,5 @@
 name: heptapod
-version: 2.3.0
+version: 2.6.0
 description: An open-source agentic toolkit for high-energy physics.
 author: Tony Menzo
 license: GPL-3.0
@@ -61,6 +61,14 @@ bundles:
       - pylhe>=1.0.2
       - numpy>=2.3.5
       - tqdm>=4.67.0
+  # Pythia-only subset of event_gen (no Sherpa/MadGraph), for workflows
+  # that just generate/shower events -- e.g. the LLP forward-flux
+  # generation that feeds the `llp` bundle.
+  pythia:
+    deps:
+      - pythia8mc>=8.316.0
+      - numpy>=2.3.5
+      - tqdm>=4.67.0
   # MadGraph is split out: it needs a separate external install (mg5_path)
   # and the Python wrapper has no heavy pip deps of its own (it subprocess
   # invokes `bin/mg5_aMC`). Gated on mg5_path being configured. `six` is
@@ -70,6 +78,13 @@ bundles:
   mg5:
     requires: [mg5_path]
     deps: [six]
+
+  # ── long-lived-particle reach studies ────────────────────────────
+  # Pure python + numpy + yaml; no external HEP software and no config
+  # gating. The experimental setting (collider-forward vs beam-dump) is
+  # carried entirely by the kernel/geometry YAML inputs, not the tools.
+  llp:
+    deps: [numpy>=2.3.5, pyyaml>=6.0]
 
   # ── diagram analysis (NDA) ───────────────────────────────────────
   nda:
@@ -260,6 +275,50 @@ tools:
     name: InspireSearchTool
     description: Search INSPIRE HEP for physics papers.
     bundle: inspire
+  - module: tools.llp.production_spectrum
+    name: ProductionSpectrumTool
+    description: Compute the parent-rest-frame LLP energy spectrum f_h(x) AND
+      the reduced branching fraction B_hat for a hosted Standard-Model parent
+      (pi, K, D, Ds) decaying to a light scalar. Name a parent and a mass -
+      no matrix element, decay constant, CKM element, mass or lifetime is
+      asked of the caller. Pass `masses` + `output_dir` to sweep a whole mass
+      grid in one call; closed channels are reported, not errors. The emitted
+      CSV feeds MesonDecayToLLP directly and carries B_hat in its header, so
+      the spectrum and its normalisation cannot be mispaired.
+    bundle: llp
+  - module: tools.llp.harvest_forward_flux
+    name: HarvestForwardFluxTool
+    description: Harvest a forward parent-hadron flux from a Pythia event
+      sample, with a per-inelastic-collision weight, ready to feed
+      MesonDecayToLLP. Abundant species are capped (subsampled with a
+      compensating weight) so the record count stays bounded at realistic
+      statistics.
+    bundle: llp
+  - module: tools.llp.meson_decay_to_llp
+    name: MesonDecayToLLPTool
+    description: Decay a harvested forward parent flux to a weighted LLP
+      flux, carrying decay-in-flight production vertices, from a declared
+      parent-rest-frame energy spectrum. Pass a `grid` of
+      {m_phi_gev, spectrum_spec} to sweep the whole declared mass grid in ONE
+      call (reusing the loaded flux and the shared vertices) rather than
+      calling once per mass. B_hat is read from a ProductionSpectrum spectrum
+      header when not supplied, and a spectrum built for a different mass, or
+      a B_hat disagreeing with the spectrum, is refused.
+    bundle: llp
+  - module: tools.llp.decay_in_volume
+    name: DecayInVolumeVsCouplingTool
+    description: Compute decay-in-volume LLP yields N_sig(g) over a COUPLING
+      grid from LLP records with production vertices (the usual reach scan) -
+      exact g^2 reweighting, ctau(g) done internally, z_shield absorber, off-axis
+      geometry, and two_track / photon acceptance.
+    bundle: llp
+  - module: tools.llp.decay_in_volume
+    name: DecayInVolumeVsLifetimeTool
+    description: Compute decay-in-volume LLP yields N_sig(ctau) at explicit
+      lab-frame lifetimes from LLP records with production vertices
+      (model-agnostic; no coupling or g^2) - z_shield absorber, off-axis
+      geometry, and two_track / photon acceptance.
+    bundle: llp
   - module: tools.mg5.mg5
     name: MadGraphFromRunCardTool
     description: Run MadGraph5_aMC@NLO to generate parton-level events given a
@@ -316,12 +375,12 @@ tools:
   - module: tools.pythia.pythia
     name: JetClusterSlowJetTool
     description: Cluster jets with Pythia8.SlowJet for a single event.
-    bundle: event_gen
+    bundle: [event_gen, pythia]
   - module: tools.pythia.pythia
     name: PythiaFromRunCardTool
     description: Generate hadron-level events using Pythia8 driven by a provided
       .cmnd run card.
-    bundle: event_gen
+    bundle: [event_gen, pythia]
   - module: tools.sherpa.sherpa
     name: SherpaFromRunCardTool
     description: Generate hadron-level events using Sherpa3 driven by a provided

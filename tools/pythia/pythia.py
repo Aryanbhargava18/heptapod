@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, List
 
 from orchestral.tools.base.tool import BaseTool
 from orchestral.tools.base.field_utils import RuntimeField, StateField
+from pydantic import Field
 
 from tqdm import tqdm
 import numpy as np
@@ -41,8 +42,13 @@ def _require_pythia() -> Any:
         raise ImportError("pythia8mc is not available, install to use this tool (e.g. `pip install pythia8mc`).") from e
 
 
-def _event_to_dict(evt: Any, finals_only: bool, full_history: bool) -> Dict[str, Any]:
-    """Convert a Pythia event to dict with fixed keys."""
+def _event_to_dict(evt: Any, finals_only: bool, full_history: bool,
+                   select_abs_pids: Optional[set] = None) -> Dict[str, Any]:
+    """Convert a Pythia event to dict with fixed keys.
+
+    When `select_abs_pids` is given, only particles whose |PDG id| is in the set
+    are recorded (matched on absolute value, so 321 keeps K+ and K-); None
+    (default) records everything, unchanged."""
     parts = []
     n = evt.size()
     # Process each particle in the event.
@@ -52,6 +58,9 @@ def _event_to_dict(evt: Any, finals_only: bool, full_history: bool) -> Dict[str,
         is_final = bool(p.isFinal() if hasattr(p, "isFinal") else (status > 0))
         # Skip non-final particles if requested
         if finals_only and not is_final:
+            continue
+        # Skip particles outside the requested species whitelist
+        if select_abs_pids is not None and abs(int(p.id())) not in select_abs_pids:
             continue
         # Build particle event record.
         rec = {
@@ -122,6 +131,7 @@ class PythiaFromRunCardTool(BaseTool):
       - n_events: number of events to generate
       - seed: optional integer random seed (if omitted, Pythia's internal RNG is used)
       - finals_only: if True, record only final-state particles (status==1)
+      - select_pids: optional |PDG id| whitelist; record only these species (abs-matched). Unset = all
       - full_history: if True, include intermediate particles and mother indices in the JSONL output
       - shower_lhe: if True, use Pythia for showering/hadronization of LHE events (requires lhe_path)
       - lhe_path: path to LHE file (required when shower_lhe=True, optional otherwise)
@@ -175,9 +185,23 @@ class PythiaFromRunCardTool(BaseTool):
     n_events: int = RuntimeField(description="Number of events to generate")
     seed: Optional[int] = RuntimeField(default=None, description="Random seed (optional)")
     finals_only: bool = RuntimeField(default=True, description="Keep only final-state particles if true")
+    # Optional whitelist. Declared with `Field(default_factory=list)` rather than
+    # `RuntimeField(default=None)` because the latter auto-injects `default=None`,
+    # which the schema generator reads as "no default -> required"; a non-None
+    # default (here, an empty list) is what marks a runtime field optional. An
+    # empty list is falsy and so means the same as unset below (record all).
+    select_pids: List[int] = Field(
+        default_factory=list,
+        json_schema_extra={"runtime": True},
+        description="Optional |PDG id| whitelist; when set, record only "
+                    "particles whose |id| is listed (matched on absolute value, "
+                    "so 321 keeps both signs). Empty/unset records all particles")
     full_history: bool = RuntimeField(default=False, description="Include lineage indices if true")
     shower_lhe: bool = RuntimeField(default=False, description="If True, use Pythia for showering/hadronization of LHE events (requires lhe_path)")
-    lhe_path: Optional[str] = RuntimeField(default=None, description="Path to LHE file for showering/hadronization (required when shower_lhe=True)")
+    # Default "" (not None): a non-None default is what marks a RuntimeField
+    # optional in the generated schema. Every use below is truthiness-based, so
+    # "" behaves identically to unset (normal generation from the run card).
+    lhe_path: str = RuntimeField(default="", description="Optional; leave unset for normal generation from the run card. Only set it (together with shower_lhe=True) to shower/hadronize a pre-generated LHE file.")
     # ---------------------------------------------------------------------- #
 
     # ---------------------------- State fields ---------------------------- #
@@ -356,6 +380,8 @@ class PythiaFromRunCardTool(BaseTool):
             # Use larger buffer (256KB) for better I/O performance. Silence the
             # fds across generation too: pythia.next() (and any per-event Pythia
             # warnings) would otherwise reach stdout and corrupt the transport.
+            sel_pids = (set(abs(int(x)) for x in self.select_pids)
+                        if self.select_pids else None)
             with open(events_path, "w", encoding="utf-8", buffering=262144) as fp, \
                     FdSilence(STDOUT, STDERR):
                 for ev_id in tqdm(range(int(self.n_events)), desc="Generating events", unit="evt", **TQDM_CONFIG):
@@ -363,7 +389,8 @@ class PythiaFromRunCardTool(BaseTool):
                         failed += 1
                         continue
                     accepted += 1
-                    edict = _event_to_dict(pythia.event, self.finals_only, self.full_history)
+                    edict = _event_to_dict(pythia.event, self.finals_only,
+                                           self.full_history, sel_pids)
                     row = {**schema_meta, "event_id": ev_id, "data": edict}
                     fp.write(json.dumps(row, separators=(",", ":"), ensure_ascii=False) + "\n")
         except Exception as e:
