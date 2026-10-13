@@ -301,8 +301,20 @@ def vertex_factor(gen, vertex: Optional[Vertex], legs: List[VLeg],
     vt = _vtype(vertex)
     spins = sorted(leg.spin for leg in legs)
 
+    # BOSONIC branches below need a single resolved coupling symbol; the
+    # fermionic ones hand `g` to their own contract. Resolve lazily, per
+    # branch, so a legitimate fermionic {gL, gR} is not rejected here.
+    #
+    # Imported inside the function on purpose: `feyncalc_codegen` imports this
+    # module, so a module-level import would be a cycle.
+    def gb():
+        from .feyncalc_codegen import resolve_bosonic_coupling
+        return resolve_bosonic_coupling(
+            (vertex.type if vertex else "bosonic"), g)
+
+
     if spins == [0.0, 0.0, 0.0]:
-        return VertexExpr(prefactor=f"I ({g})")
+        return VertexExpr(prefactor=f"I ({gb()})")
 
     if spins == [0.0, 0.0, 1.0]:
         # SSV: i g (pA - pB)^mu, both scalars incoming.  The A/B ordering
@@ -312,14 +324,14 @@ def vertex_factor(gen, vertex: Optional[Vertex], legs: List[VLeg],
         vec = next(l for l in legs if l.spin == 1.0)
         a, b = scalars[0], scalars[1]
         return VertexExpr(
-            prefactor=f"I ({g}) FVD[{a.p_in} - {b.p_in}, {vec.index}]"
+            prefactor=f"I ({gb()}) FVD[{a.p_in} - {b.p_in}, {vec.index}]"
         )
 
     if spins == [0.0, 1.0, 1.0]:
         # SVV: i g g^{mu nu} contracting the two vector lines.
         vecs = [l for l in legs if l.spin == 1.0]
         return VertexExpr(
-            prefactor=f"I ({g}) MTD[{vecs[0].index}, {vecs[1].index}]"
+            prefactor=f"I ({gb()}) MTD[{vecs[0].index}, {vecs[1].index}]"
         )
 
     if spins == [1.0, 1.0, 1.0]:
@@ -335,7 +347,7 @@ def vertex_factor(gen, vertex: Optional[Vertex], legs: List[VLeg],
         k1, k2, k3 = v1.p_in, v2.p_in, v3.p_in
         return VertexExpr(
             prefactor=(
-                f"I ({g}) ("
+                f"I ({gb()}) ("
                 f"MTD[{m1}, {m2}] FVD[{k1} - {k2}, {m3}] + "
                 f"MTD[{m2}, {m3}] FVD[{k2} - {k3}, {m1}] + "
                 f"MTD[{m3}, {m1}] FVD[{k3} - {k1}, {m2}])"
@@ -569,14 +581,26 @@ def _contact_amplitude(gen, diagram: Diagram, legs: List[VLeg],
     vt = _vtype(vertex)
     ms = _multiset(external_spins(diagram))
 
+    # BOSONIC branches below need a single resolved coupling symbol; the
+    # fermionic ones hand `g` to their own contract. Resolve lazily, per
+    # branch, so a legitimate fermionic {gL, gR} is not rejected here.
+    #
+    # Imported inside the function on purpose: `feyncalc_codegen` imports this
+    # module, so a module-level import would be a cycle.
+    def gb():
+        from .feyncalc_codegen import resolve_bosonic_coupling
+        return resolve_bosonic_coupling(
+            (vertex.type if vertex else "bosonic"), g)
+
+
     if ms == _multiset([0.0, 0.0, 0.0, 0.0]):
-        return [f"{amp_var} = I ({g});"]
+        return [f"{amp_var} = I ({gb()});"]
 
     if ms == _multiset([0.0, 0.0, 1.0, 1.0]):
         vecs = [l for l in legs if l.spin == 1.0]
         pol = _pol_factors(legs)
         return [
-            f"{amp_var} = I ({g}) MTD[{vecs[0].index}, {vecs[1].index}] {pol};"
+            f"{amp_var} = I ({gb()}) MTD[{vecs[0].index}, {vecs[1].index}] {pol};"
         ]
 
     if ms == _multiset([0.5, 0.5, 0.5, 0.5]):

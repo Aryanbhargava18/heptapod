@@ -1,5 +1,5 @@
 name: heptapod
-version: 2.13.0
+version: 2.16.3
 description: An open-source agentic toolkit for high-energy physics.
 author: Tony Menzo
 license: GPL-3.0
@@ -30,6 +30,16 @@ config:
     description: Command or absolute path to wolframscript. Required for
       the wolfram bundle, and for the eda and feynrules bundles, which drive
       Mathematica through it.
+    type: path
+    required: false
+  - name: delphes_path
+    description: Built Delphes install dir containing the DelphesHepMC3
+      executable and cards/. The delphes bundle is gated on this config
+      key — when serving via toolbase, set it with `tb config set
+      heptapod delphes_path <dir>` or the bundle's tools are hidden.
+      (The DELPHES_DIR env-var fallback inside the tools applies only
+      to direct in-process use; the serve-time bundle gate reads
+      resolved config, not the environment.)
     type: path
     required: false
   - name: cache_enabled
@@ -166,6 +176,17 @@ bundles:
   # ── BSM model UFO generation via Mathematica/FeynRules ───────────
   feynrules:
     requires: [feynrules_path, wolframscript_path]
+
+  # ── HepMC3 event-format bridge (evtjsonl <-> .hepmc) ─────────────
+  hepmc:
+    deps: [pyhepmc>=2.13]
+
+  # ── Delphes fast detector simulation ─────────────────────────────
+  # Gated on a local Delphes build (needs ROOT). The ROOT-output
+  # flattener reads with uproot, so no PyROOT is required.
+  delphes:
+    requires: [delphes_path]
+    deps: [uproot>=5.0]
 tools:
   - module: tools.analysis.conversions
     name: EventJSONLToNumpyTool
@@ -255,6 +276,18 @@ tools:
     description: Build a Pythia-readable decay-table fragment to decay a BSM state the
       LHE left stable (e.g. GMSB neutralino -> photon + gravitino).
     bundle: bsm
+  - module: tools.eda.compute_rate_tools
+    name: ComputeDecayRate
+    description: Compute a tree-level partial decay width from a diagram — generates
+      the FeynCalc, runs it, and returns the closed-form width plus its numeric
+      value in one call.
+    bundle: eda
+  - module: tools.eda.compute_rate_tools
+    name: ComputeCrossSection
+    description: Compute a tree-level 2->2 cross section from a diagram — generates
+      the FeynCalc, runs it, and returns sigma(s) in closed form plus its numeric
+      value at a chosen sqrt(s) in one call.
+    bundle: eda
   - module: tools.eda.compute_symbolic_amplitude_tool
     name: ComputeSymbolicAmplitude
     description: Generate FeynCalc code with symbolic masses and couplings.
@@ -340,11 +373,17 @@ tools:
   - module: tools.jobs.jobs_tool
     name: JobStatusTool
     description: Poll a background job's state (queued, running, done, failed)
-      with a log tail, or list all jobs.
+      with a log tail and, for MadGraph and Pythia, a progress bar; or list
+      all jobs.
     bundle: jobs
   - module: tools.jobs.jobs_tool
     name: JobResultTool
     description: Fetch a finished background job's verbatim tool output.
+    bundle: jobs
+  - module: tools.jobs.jobs_tool
+    name: CancelJobTool
+    description: Stop a queued or running background job and every process it
+      started (MadGraph workers, Wolfram kernel, Delphes).
     bundle: jobs
   - module: tools.reverse.reverse_tool
     name: ReverseLagrangianTool
@@ -541,3 +580,22 @@ tools:
     name: NaturalUnitsConverter
     description: Convert between natural units (ℏ=c=1) and SI units.
     bundle: units
+  - module: tools.hepmc.hepmc
+    name: JSONLToHepMCTool
+    description: Convert evtjsonl-1.0 events into a HepMC3 ASCII file
+      (the input format Delphes consumes).
+    bundle: hepmc
+  - module: tools.hepmc.hepmc
+    name: HepMCToJSONLTool
+    description: Convert a HepMC3 ASCII file into the evtjsonl-1.0 schema.
+    bundle: hepmc
+  - module: tools.delphes.delphes
+    name: DelphesFromHepMCTool
+    description: Run Delphes fast detector simulation on a HepMC3 event
+      file with a stock or custom detector card.
+    bundle: delphes
+  - module: tools.delphes.delphes
+    name: DelphesROOTToJSONLTool
+    description: Flatten Delphes ROOT output (jets, electrons, muons,
+      photons, MET) into reco-level JSONL via uproot.
+    bundle: delphes

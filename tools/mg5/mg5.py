@@ -5,10 +5,13 @@
 # Please respect the MCnet Guidelines, see GUIDELINES for details.
 """
 import os, json, datetime, subprocess
+import ast, re
 from typing import Optional
 
 from orchestral.tools.base.tool import BaseTool
 from orchestral.tools.base.field_utils import RuntimeField, StateField
+
+from tools.jobs.progress import report_progress
 
 import subprocess
 
@@ -263,6 +266,123 @@ def _find_all_lhe_files(events_dir: str, run_dirs: list) -> dict:
                 break
 
     return lhe_files
+
+def _count_scan_points(card_text: str) -> Optional[int]:
+    """Number of runs a card's `scan:` settings make MG5 do, or None.
+
+    Parameters with a bare `scan:` each add a dimension (MG5 loops over all
+    combinations); parameters sharing a `scanN:` tag move together and add
+    one. Values MG5 would have to evaluate (e.g. `range(...)`) give None:
+    the count is only for the progress bar, so unknown beats wrong.
+    """
+    dims = {}
+    for i, m in enumerate(re.finditer(r"^\s*set\s+\S+\s+(scan\d*):\s*(\[.*\])",
+                                      card_text, re.MULTILINE)):
+        tag, values = m.group(1), m.group(2)
+        try:
+            n = len(ast.literal_eval(values))
+        except (ValueError, SyntaxError):
+            return None
+        dims[tag if tag != "scan" else f"scan#{i}"] = n
+    if not dims:
+        return None
+    total = 1
+    for n in dims.values():
+        total *= n
+    return total
+
+
+class _MG5Progress:
+    """Turns mg5_run.log, as MG5 writes it, into progress reports.
+
+    MG5 reports no event count while it runs, so what is available is the
+    stage (building the process, survey, refine, combining events; MG5
+    compiles inside the survey, so that is not a stage), the scheduler line
+    `Idle: a,  Running: b,  Completed: c` for the current stage, and, for a
+    scan, which run (point) it is on. A scan reports points done out of the
+    total; a single run reports the current stage's jobs done out of queued.
+    """
+
+    _STAGES = (
+        ("Generating Helas calls", "building process"),
+        ("Running Survey", "survey"),
+        ("Refine results", "refine"),
+        ("Combining Events", "combining events"),
+        ("Running MadSpin", "MadSpin"),
+        ("Running Systematics", "systematics"),
+    )
+    _RUN = re.compile(r"Generating\s+\d+\s+events with run name\s+(\S+)")
+    _SCHED = re.compile(r"Idle:\s*(\d+),\s*Running:\s*(\d+),\s*Completed:\s*(\d+)")
+
+    def __init__(self, log_path: str, n_points: Optional[int]):
+        self.log_path = log_path
+        self.n_points = n_points if n_points and n_points > 1 else None
+        self.offset = 0
+        self.partial = b""
+        self.run = None
+        self.stage = None
+        self.sched = None
+        self.runs = []
+        self.last = None
+
+    def _feed(self, line: str) -> None:
+        m = self._RUN.search(line)
+        if m:
+            self.run, self.stage, self.sched = m.group(1), None, None
+            if self.run not in self.runs:
+                self.runs.append(self.run)
+            return
+        m = self._SCHED.search(line)
+        if m:
+            idle, running, completed = (int(x) for x in m.groups())
+            self.sched = (completed, idle + running + completed)
+            return
+        for marker, stage in self._STAGES:
+            if marker in line:
+                self.stage, self.sched = stage, None
+                return
+
+    def poll(self, tool, finished: bool = False) -> None:
+        """Report what the log shows so far; ``finished`` once MG5 has exited.
+
+        A scan point counts as done when the next one starts (MG5 prints a
+        results summary after the survey as well as at the end, so that line
+        cannot mark it), and the last one when MG5 exits.
+        """
+        if getattr(tool, "_stream_callback", None) is None:
+            return
+        try:
+            with open(self.log_path, "rb") as fh:
+                fh.seek(self.offset)
+                chunk = fh.read()
+                self.offset = fh.tell()
+        except OSError:
+            return
+        lines = (self.partial + chunk).split(b"\n")
+        self.partial = lines.pop()
+        for raw in lines:
+            self._feed(raw.decode("utf-8", errors="replace"))
+
+        parts = [p for p in (self.run, self.stage) if p]
+        if self.n_points:
+            if self.sched:
+                parts.append(f"{self.sched[0]}/{self.sched[1]} jobs")
+            done = len(self.runs) if finished else max(0, len(self.runs) - 1)
+            report = (min(done, self.n_points), self.n_points, "scan points")
+        elif self.sched:
+            report = (self.sched[0], self.sched[1], "integration jobs")
+        else:
+            report = (None, None, "")
+        state = report + (" · ".join(parts),)
+        if state != self.last and (state[3] or state[0] is not None):
+            self.last = state
+            report_progress(tool, done=state[0], total=state[1],
+                            unit=state[2], message=state[3])
+
+
+# Seconds between looks at mg5_run.log while MG5 runs.
+_PROGRESS_POLL_SECONDS = 2.0
+
 
 def _normalize_masses(masses) -> dict:
     """Coerce a {pdg: GeV} mapping (or [[pdg, gev], ...]) into {int: float}.
@@ -520,16 +640,30 @@ class MadGraphFromRunCardTool(BaseTool):
                 suggestion="Pass a valid mg5_path pointing to MG5_aMC_v*/"
             )
 
-        # Generate events.
+        # Generate events, reading the log as it grows for progress reports.
+        watcher = _MG5Progress(log_local_path, _count_scan_points(card_text))
         with open(log_local_path, "w", encoding="utf-8") as logfp:
-            completed = subprocess.run(
+            proc = subprocess.Popen(
                 [mg5_exec, cmd_local_path],
                 cwd=outdir,               # run inside outdir for reproducibility
                 stdout=logfp,
                 stderr=subprocess.STDOUT,
                 text=True,
             )
-        if completed.returncode != 0:
+            try:
+                while True:
+                    try:
+                        proc.wait(timeout=_PROGRESS_POLL_SECONDS)
+                        break
+                    except subprocess.TimeoutExpired:
+                        watcher.poll(self)
+            except BaseException:
+                # Interrupted, cancelled or timed out: MG5 must not outlive us.
+                proc.kill()
+                proc.wait()
+                raise
+        watcher.poll(self, finished=proc.returncode == 0)
+        if proc.returncode != 0:
             # MG5 may exit nonzero on nevents=0 (ZeroDivisionError) but the
             # width is still computed and logged.  Check for it before failing.
             width_info = _parse_width_from_log(log_local_path)

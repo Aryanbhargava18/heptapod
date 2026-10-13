@@ -861,17 +861,33 @@ tool = DecayInVolumeTool(
 
 Two pure-python bundles for long, multi-stage runs.
 
-#### SubmitJobTool / JobStatusTool / JobResultTool
+#### SubmitJobTool / JobStatusTool / JobResultTool / CancelJobTool
 
 **Purpose**: Run slow tools detached. Lagrangian checks on a large model, UFO
-compiles and MadGraph runs take minutes, which is longer than an agent should
-block for. Submit returns a `job_id` at once; poll the state, then fetch the
-tool's verbatim output.
+compiles, MadGraph and Pythia runs take minutes, which is longer than an agent
+should block for. Submit returns a `job_id` at once; poll the state, then fetch
+the tool's verbatim output. `canceljob` stops a job that is no longer wanted.
 
 Only tools in the whitelist in `tools/jobs/job_manager.py` can run as jobs:
 `feynrulestoufo`, `validatelagrangian`, `validateufomodel`,
-`madgraphfromruncard`, and `audittrail`. `tool_args` takes the target tool's
+`madgraphfromruncard`, `pythiafromruncard`, `delphesfromhepmc`,
+`reverselagrangian`, and `audittrail`. `tool_args` takes the target tool's
 runtime arguments only; paths to executables come from server config.
+
+A job is `queued`, `running`, `done`, `failed` or `cancelled`. Stopping a job,
+by `canceljob` or the `max_seconds` watchdog, stops every process its tool
+started, not just the runner.
+
+**Progress.** A tool reports progress with `report_progress(self, done, total,
+unit=..., message=...)` from `tools/jobs/progress.py`. As a job, that lands in
+`status.json`, and `jobstatus` shows it with a rough ETA:
+
+```
+[################--------]  67%  2/3 scan points  ETA 10s  run_03 · survey
+```
+
+MadGraph reports the stage, its integration jobs and, for a scan, the points
+done. Called directly with no callback, `report_progress` does nothing.
 
 **Example:**
 ```python

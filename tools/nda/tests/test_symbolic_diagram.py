@@ -27,6 +27,7 @@ from tools.nda.symbolic_diagram import (
     SymbolicPropagator,
     parse_symbolic_diagram,
     build_diagram_from_symbolic,
+    _is_massive_particle,
 )
 from tools.nda.diagram_resolution import resolve_diagram
 from tools.nda.simple_diagram import Diagram
@@ -829,7 +830,17 @@ def test_build_final_state_massive_explicit():
 
 
 def test_build_string_mass_means_massive():
-    """String mass like 'mV' signals massive (mass sentinel = 1.0)."""
+    """String mass like 'mV' signals massive, and is CARRIED as the symbol.
+
+    This asserted the numeric sentinel (mass == 1.0). The intent in its own
+    title -- a named mass means massive -- still holds: `_is_massive_particle`
+    returns True and the generator emits the Proca polarisation sum. What
+    changed is the ENCODING: the name is preserved now, because it names the
+    symbol the formula is written in, and collapsing it to 1.0 here made the
+    caller's `values` bind nothing (see `_mass_for_codegen`). The assertions
+    move from the sentinel to what actually matters -- massive, and the name
+    survives.
+    """
     print("=" * 60)
     print("Testing build string mass means massive")
     print("=" * 60)
@@ -839,9 +850,15 @@ def test_build_string_mass_means_massive():
         "final": [{"label": "f", "spin": "1/2"}, {"label": "fbar", "spin": "1/2"}],
         "vertices": [{"type": "gauge-vector", "coupling": "g"}],
     })
+    assert _is_massive_particle(sym.initial[0], is_initial=True)
     diag = build_diagram_from_symbolic(sym)
-    assert diag.initial[0].mass == 1.0
-    assert isinstance(diag.initial[0].mass, (int, float))
+    assert diag.initial[0].mass == "mV"
+
+    # Massive, as the title says: the Proca sum, not the massless one (which
+    # carries a trailing reference-vector argument of 0).
+    from tools.eda.feyncalc_codegen import SymbolicFeynCalcCodeGenerator
+    code = SymbolicFeynCalcCodeGenerator().generate(diag).code
+    assert "DoPolarizationSums[ampSq, p];" in code, code
 
     print("  PASS")
     return True
@@ -862,8 +879,13 @@ def test_build_string_mass_on_final_state():
         "vertices": [{"type": "scalar-3pt", "coupling": "g"}],
     })
     diag = build_diagram_from_symbolic(sym)
-    assert diag.final[0].mass == 1.0
-    assert diag.final[1].mass == 1.0
+    # Carried as the declared symbol (was the 1.0 sentinel). Both daughters
+    # share ONE name, which is the point: a degenerate pair must not be handed
+    # two different mass symbols.
+    assert diag.final[0].mass == "mW"
+    assert diag.final[1].mass == "mW"
+    assert _is_massive_particle(sym.final[0])
+    assert _is_massive_particle(sym.final[1])
 
     print("  PASS")
     return True

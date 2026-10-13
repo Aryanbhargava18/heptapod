@@ -22,6 +22,7 @@ UFO that is silently wrong rather than one that fails.
 import os
 import json
 import re
+import signal
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
@@ -316,6 +317,58 @@ def _candidate_symbols(stdout: str) -> str:
     return ""
 
 
+def _descendants(pid: int) -> list:
+    """PIDs descended from ``pid``, deepest last. Best effort, via ps."""
+    try:
+        out = subprocess.run(["ps", "-eo", "pid,ppid"], capture_output=True,
+                             text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    children = {}
+    for line in out.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2:
+            try:
+                children.setdefault(int(parts[1]), []).append(int(parts[0]))
+            except ValueError:
+                continue
+    found, stack = [], [pid]
+    while stack:
+        for kid in children.get(stack.pop(), []):
+            found.append(kid)
+            stack.append(kid)
+    return found
+
+
+def _kill_process_tree(proc: subprocess.Popen) -> None:
+    """SIGKILL the launcher and anything still running underneath it.
+
+    ``wolframscript`` is a launcher; the process doing the work is a
+    ``WolframKernel`` it spawns. Killing the launcher usually takes the kernel
+    with it, but "usually" is not a property to rely on when the failure mode
+    is a kernel holding a core at 100% until someone notices, so descendants
+    are collected first and swept afterwards.
+
+    Deliberately NOT ``killpg``. That would need the child in its own session,
+    and a child in its own session no longer receives the signals sent to the
+    host's process group -- which is the case that actually leaked here.
+    """
+    kids = _descendants(proc.pid)
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    try:
+        proc.wait(timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    for pid in kids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
 def _invoke_generator(
     wolframscript_path: str,
     feynrules_path: Optional[str],
@@ -361,26 +414,58 @@ def _invoke_generator(
         f"OutputDir={output_dir}",
     ] + extra_args
 
+    # Left in the host's own session ON PURPOSE.
+    #
+    # A wolframscript started by this tool was found alive after six days at
+    # 3% CPU, reparented to init, still holding the path of a sandbox that no
+    # longer existed. Its parent had died while it ran, so no timeout ever
+    # fired: the thing counting the seconds was the thing that went away.
+    # Keeping the child in the host's session means a signal sent to that
+    # group reaches it too, which is the only in-process protection against
+    # that case. `start_new_session=True` would buy a tidy killpg and lose
+    # exactly this, so it is not used.
     try:
-        proc = subprocess.run(
+        proc_h = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=base_directory,
             env=env,
-            timeout=timeout_sec,
-            check=False,
             text=True,
         )
-    except subprocess.TimeoutExpired:
-        return None, stdout_path, stderr_path, f"wolframscript exceeded {timeout_sec}s"
     except FileNotFoundError:
         return None, stdout_path, stderr_path, (
             f"wolframscript_path not found: {wolframscript_path}"
         )
 
-    Path(stdout_path).write_text(proc.stdout or "")
-    Path(stderr_path).write_text(proc.stderr or "")
+    timed_out = False
+    try:
+        try:
+            out, err = proc_h.communicate(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_process_tree(proc_h)
+            out, err = proc_h.communicate()
+        except BaseException:
+            # KeyboardInterrupt, SystemExit, a harness tearing the trial down:
+            # the kernel must not outlive the call that started it.
+            _kill_process_tree(proc_h)
+            raise
+    finally:
+        if proc_h.poll() is None:
+            _kill_process_tree(proc_h)
+
+    # Partial output is evidence, and a run that timed out is exactly when it
+    # is wanted, so the logs are written on both paths.
+    Path(stdout_path).write_text(out or "")
+    Path(stderr_path).write_text(err or "")
+    if timed_out:
+        return None, stdout_path, stderr_path, (
+            f"wolframscript exceeded {timeout_sec}s (killed, with its kernel)"
+        )
+
+    proc = subprocess.CompletedProcess(
+        args=cmd, returncode=proc_h.returncode, stdout=out, stderr=err)
     return proc, stdout_path, stderr_path, None
 
 
@@ -478,7 +563,12 @@ class _FeynRulesToolBase(BaseTool):
             "(default false). Doubles check time; worth it only when running "
             "checks the SM itself fails"))
     timeout_sec: Optional[int] = RuntimeField(
-        default=3600, description="Timeout in seconds for Mathematica run")
+        default=1200,
+        description=(
+            "Walltime limit for the Mathematica run. On expiry the kernel is "
+            "killed along with the launcher that spawned it. Was 3600, which "
+            "is long enough for a hung kernel to burn an hour of CPU before "
+            "anyone notices; raise it per call for a model that needs longer"))
     log_dir: Optional[str] = RuntimeField(
         default=None,
         description=(

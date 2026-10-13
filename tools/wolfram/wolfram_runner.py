@@ -73,6 +73,28 @@ def tidy_text_symbols(tex: str) -> str:
     )
 
 
+# Mathematica writes reals outside a narrow range in its own scientific
+# notation -- 2.28*^-7, not 2.28e-7 -- and `float()` rejects it. Unfixed,
+# every NUMERICAL_RESULT small or large enough to print that way comes back
+# as a STRING while its neighbours come back as floats, so a caller that
+# checks one field and trusts the rest silently propagates a string. Decay
+# widths and cross sections land in that range routinely.
+_MMA_EXP = re.compile(r"(?<=[\d.])\*\^([+-]?\d+)")
+
+
+def _to_float(raw: str):
+    """Parse a NUMERICAL_RESULT value, returning the string if it is not a
+    number. Accepts Mathematica's ``*^`` exponent as well as plain floats;
+    a backtick-suffixed precision mark (``2.28`20.`` ) is dropped first."""
+    text = raw.strip()
+    candidate = _MMA_EXP.sub(r"e\1", text)
+    candidate = candidate.split("`")[0] if "`" in candidate else candidate
+    try:
+        return float(candidate)
+    except ValueError:
+        return text
+
+
 def _parse_structured_output(
     stdout: str,
     latex_postprocess: Optional[Callable[[str], str]] = None,
@@ -105,10 +127,7 @@ def _parse_structured_output(
 
         m = RESULT_MARKERS["NUMERICAL_RESULT"].match(line)
         if m:
-            try:
-                parsed["numerical"][m.group(1)] = float(m.group(2))
-            except ValueError:
-                parsed["numerical"][m.group(1)] = m.group(2)
+            parsed["numerical"][m.group(1)] = _to_float(m.group(2))
             continue
 
         m = RESULT_MARKERS["LATEX_RESULT"].match(line)
