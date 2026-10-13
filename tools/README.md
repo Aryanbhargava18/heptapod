@@ -718,3 +718,76 @@ tool = EnumerateDiagramsTool(
     base_directory="./workspace"
 )
 ```
+
+### LLP Reach Tools (`llp` bundle)
+
+**Purpose:** Decay-in-volume long-lived-particle (LLP) reach studies — sampling a weighted LLP flux from an analytic parent-flux kernel and computing signal yields over a coupling grid with exact g² reweighting.
+
+The bundle is setting-agnostic: the collider-forward vs beam-dump choice lives entirely in the kernel YAML (parent mass, momentum/angle scales, per-interaction normalization), the geometry YAML, and the `n_int` normalization — never in the tools. Pure Python + numpy + yaml; no external HEP software and no config gating.
+
+Declared conventions (shared by both tools):
+- **g²-stripped weights**: `event_weight_g2_stripped = n_per_int * kappa / n_samples`, so `N_sig(g) = N_int * g² * Σᵢ wᵢ * P_dec,i(g) * accᵢ`.
+- **Decaying-parents-only kernels**: the kernel parametrizes d²N/(dp dθ) of decaying parents per primary interaction (decay-before-absorption folded into `n_per_int`).
+- **Straight-line propagation** of the LLP from the primary vertex at its lab angle.
+- **Midpoint two-track convention**: the phi → μ⁺μ⁻ acceptance is evaluated at the midpoint of the in-volume segment, keeping it g-independent so one event set covers the whole coupling grid exactly.
+
+#### LLPFluxFromMesonDecayTool
+
+Samples weighted LLP lab-frame events from an analytic parent-flux kernel (form `pexp_texp`) convolved with the tree-level 3-body production spectrum M → μνφ (scalar radiated off the muon leg). Writes line-delimited JSON records (`E`, `px`, `py`, `pz`, `theta_lab`, `parent_channel`, `event_weight_g2_stripped`) plus a manifest declaring the g²-stripped weight convention. A kinematically closed channel (m_φ ≥ m_M − m_μ) returns status ok with `n_samples = 0` and the cutoff flagged.
+
+**Input Parameters:**
+- `kernel_spec` (str): Path to the kernel YAML (carries parent name, `parent_mass_gev`, `n_per_int`, `p0_gev`, `a`, `theta0_rad`)
+- `m_phi_gev` (float): LLP mass in GeV
+- `m_mu_gev` (float): Muon mass in GeV (default: 0.1056584)
+- `kappa` (float): Declared branching coefficient at g = 1, i.e. Br(M → μνφ) = g² κ
+- `n_samples` (int): Number of Monte Carlo events
+- `seed` (int): RNG seed (deterministic output)
+- `output_path` (str): Events file path (line-delimited JSON)
+
+**Example:**
+```python
+from tools.llp import LLPFluxFromMesonDecayTool
+
+tool = LLPFluxFromMesonDecayTool(
+    kernel_spec="kernel/kaon.yaml",
+    m_phi_gev=0.25,
+    kappa=1.3e-5,
+    n_samples=200000,
+    seed=42,
+    output_path="flux/phi_K.jsonl",
+    base_directory="./workspace"
+)
+# Output: flux/phi_K.jsonl + flux/phi_K.manifest.json
+```
+
+#### DecayInVolumeTool
+
+Computes decay-in-volume yields N_sig(g) over a coupling grid from g²-stripped events (multiple channels may be concatenated into one file). Per event: in-volume segment [L1, L2] from the on-axis cylinder intersection, `P_dec = exp(-L1/λ) − exp(-L2/λ)` with `λ = βγ cτ` and `cτ = ħc / (g² width_ref)`; midpoint two-track acceptance. Writes a yields table plus a per-event audit file (`parent_channel`, `beta_gamma`, `L1_m`, `L2_m`, `geom_pass`, `two_track_pass`, `p_decay_at_g_ref`, `weighted_contribution_at_g_ref`).
+
+**Input Parameters:**
+- `events_path` (str): Line-delimited JSON events (LLPFluxFromMesonDecayTool output format)
+- `geometry_path` (str): Geometry YAML (`z_min_m`, `z_max_m`, `r_volume_m`, `z_det_m`, `r_det_m`)
+- `m_phi_gev` / `m_mu_gev` (float): LLP / muon masses in GeV
+- `width_ref_gev` (float): Γ_tot at g = 1 (g²-stripped reference width)
+- `g_grid` (list[float]): Couplings at which to evaluate N_sig (exact reweighting)
+- `n_int` (float): Number of primary interactions (σ_inel·L_int or N_POT)
+- `require_two_track` (bool): Apply the two-track acceptance (default: True)
+- `seed` (int): RNG seed for the isotropic φ → μμ decay sampling (default: 1)
+- `output_path` (str): Yields table JSON path
+
+**Example:**
+```python
+from tools.llp import DecayInVolumeTool
+
+tool = DecayInVolumeTool(
+    events_path="flux/phi_all_channels.jsonl",
+    geometry_path="geometry/geometry.yaml",
+    m_phi_gev=0.25,
+    width_ref_gev=1.52e-3,
+    g_grid=[1e-8, 3e-8, 1e-7, 1e-6],
+    n_int=2.2e16,
+    output_path="yields/m0p25.json",
+    base_directory="./workspace"
+)
+# Output: yields/m0p25.json + yields/m0p25.audit.jsonl
+```

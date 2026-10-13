@@ -22,6 +22,7 @@ for _name in (
     "feyngraph",
     "feynrules",
     "inspire",
+    "llp",
     "logging",
     "mg5",
     "nda",

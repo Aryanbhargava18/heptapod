@@ -259,6 +259,41 @@ def _make_nda_toolkit_tools(base_dir: str) -> list:
     ]
 
 
+def _make_llp_tools(base_dir: str) -> list:
+    """LLP reach tools -- the Pythia-driven forward-flux pipeline.
+
+    Pure Python + numpy + yaml; no external software. Chain:
+    harvest a Pythia forward flux -> decay parents to the LLP with a
+    declared spectrum (decay-in-flight vertices) -> decay-in-volume yields
+    with exact g^2 reweighting. The collider vs beam-dump setting lives
+    entirely in the geometry / normalization data products the tools
+    consume, so the same group serves both.
+    """
+    from tools.llp import (HarvestForwardFluxTool, MesonDecayToLLPTool,
+                           DecayInVolumeVsCouplingTool,
+                           DecayInVolumeVsLifetimeTool)
+    return [
+        _named(HarvestForwardFluxTool(base_directory=base_dir), "HarvestForwardFlux"),
+        _named(MesonDecayToLLPTool(base_directory=base_dir),    "MesonDecayToLLP"),
+        _named(DecayInVolumeVsCouplingTool(base_directory=base_dir), "DecayInVolumeVsCoupling"),
+        _named(DecayInVolumeVsLifetimeTool(base_directory=base_dir), "DecayInVolumeVsLifetime"),
+    ]
+
+
+def _make_pythia_tools(base_dir: str) -> list:
+    """Pythia8 event generation (run card -> event JSONL) + jet clustering.
+
+    A lightweight subset of `event_gen` (no MadGraph/Sherpa import), for
+    workflows that only need to generate/shower events -- e.g. the LLP
+    forward-flux generation that feeds the `llp` group.
+    """
+    from tools.pythia import PythiaFromRunCardTool, JetClusterSlowJetTool
+    return [
+        _named(PythiaFromRunCardTool(base_directory=base_dir), "PythiaFromRunCard"),
+        _named(JetClusterSlowJetTool(base_directory=base_dir), "JetClusterSlowJet"),
+    ]
+
+
 # ================================================================== #
 # ======================== Group Registry ========================== #
 # ================================================================== #
@@ -269,6 +304,8 @@ TOOL_GROUPS: dict[str, Callable[[str], list]] = {
     "nda":              _make_nda_tools,
     "units":            _make_units_tools,
     "analysis":         _make_analysis_tools,
+    "llp":              _make_llp_tools,
+    "pythia":           _make_pythia_tools,
     "event_gen":        _make_event_gen_tools,
     "feynrules":        _make_feynrules_tools,
     "eda":              _make_eda_tools,
@@ -277,7 +314,7 @@ TOOL_GROUPS: dict[str, Callable[[str], list]] = {
 }
 
 # Groups that work out of the box (no external software)
-LIGHTWEIGHT_GROUPS = ["pdg", "inspire", "nda", "units"]
+LIGHTWEIGHT_GROUPS = ["pdg", "inspire", "nda", "units", "llp"]
 
 
 def get_available_groups(base_dir: str | None = None) -> list[str]:
