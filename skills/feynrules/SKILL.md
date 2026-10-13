@@ -119,11 +119,19 @@ before generating.
 # 1. Edit or create the model
 $EDITOR models/my_model.fr
 
-# 2. Compile to UFO — the heptapod FeynRulesToUFO tool, or wolframscript directly
-#    Tool:   FeynRulesToUFO with model_path / output_dir
-#    Direct: wolframscript -file scripts/run_feynrules.wl
+# 2. Check the Lagrangian first — cheap, and no UFO written
+#    Tool:   ValidateLagrangianTool with model_path / lagrangian
+#
+# 3. Compile to UFO — the heptapod tool, or wolframscript directly
+#    Tool:   FeynRulesToUFOTool with model_path / lagrangian / output_dir
+#            `lagrangian` is required and never guessed: pass the full
+#            expression, e.g. "LSM + LBSM" or "LSM + LkinS1 + L1YukRR".
+#            Omit it and the tool reports the symbols your model defines.
+#    Direct: wolframscript -f tools/feynrules/UFO_generator.wl \
+#              ModelPath=... FeynRulesPath=... OutputDir=... \
+#              "Lagrangian=LSM + LBSM"
 
-# 3. Sanity-check the UFO (above) before going near MG5
+# 4. Check the UFO itself — ValidateUFOModelTool, before going near MG5
 ```
 
 ## Reference files

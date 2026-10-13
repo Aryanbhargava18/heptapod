@@ -79,12 +79,25 @@ class SymbolicVertex:
     For simple vertices, coupling is a string (e.g., ``"y_b"``).
     For chiral vertices, coupling is a dict of string names
     (e.g., ``{"gL": "gL", "gR": "gR"}``).
+
+    ``structures`` and ``pairing`` carry what a CONTACT operator needs
+    beyond a type name: which Dirac structure sits on each bilinear, and
+    which external legs form them. A four-fermion operator is not
+    determined by "four fermion legs plus a type string" -- see
+    tools/eda/scattering._contact_ffff.
     """
     type: str
     coupling: Union[str, Dict[str, str]]
+    structures: Optional[List[str]] = None
+    pairing: Optional[List[List[int]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"type": self.type, "coupling": self.coupling}
+        out: Dict[str, Any] = {"type": self.type, "coupling": self.coupling}
+        if self.structures:
+            out["structures"] = self.structures
+        if self.pairing:
+            out["pairing"] = self.pairing
+        return out
 
 
 @dataclass
@@ -230,7 +243,9 @@ def _parse_symbolic_vertex(d: Dict[str, Any]) -> SymbolicVertex:
             f'Examples: "y_b" or {{"gL": "gL", "gR": "gR"}}.'
         )
 
-    return SymbolicVertex(type=vtype, coupling=coupling)
+    return SymbolicVertex(type=vtype, coupling=coupling,
+                          structures=d.get("structures"),
+                          pairing=d.get("pairing"))
 
 
 def _parse_symbolic_propagator(d: Dict[str, Any]) -> SymbolicPropagator:
@@ -411,7 +426,8 @@ def build_diagram_from_symbolic(sym: SymbolicDiagram) -> Diagram:
         for p in sym.final
     ]
     vertices = [
-        Vertex(type=v.type, coupling=v.coupling)
+        Vertex(type=v.type, coupling=v.coupling,
+               structures=v.structures, pairing=v.pairing)
         for v in sym.vertices
     ]
     propagators = [

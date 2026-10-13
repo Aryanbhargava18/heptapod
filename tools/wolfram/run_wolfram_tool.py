@@ -5,11 +5,15 @@
 # Please respect the MCnet Guidelines, see GUIDELINES for details.
 """
 """
-RunWolframScript / RunWolframScriptBatch — BaseTools for executing
-Mathematica/FeynCalc code.
+RunWolframScript / RunWolframScriptBatch — BaseTools for executing Wolfram
+Language code via wolframscript.
 
 RunWolframScript runs a single script. RunWolframScriptBatch runs multiple
 scripts concurrently via a thread pool, returning all results in one call.
+
+Both are general-purpose: they execute whatever Wolfram Language the caller
+supplies and assume no particular package. A script that needs one loads it
+itself.
 """
 
 import json
@@ -25,7 +29,12 @@ from tools.logging.findings import append_finding
 
 
 def _sanity_check_results(parsed: dict) -> list:
-    """Check parsed Wolfram results for common issues.
+    """Flag Wolfram-level failure modes in parsed results.
+
+    These are all cases where the script "succeeded" (exit code 0) but a
+    result is not a usable value, which is easy to miss when the number is
+    read straight out of the JSON. Nothing here interprets what a result
+    MEANS -- that is the caller's business.
 
     Returns a list of warning strings (empty if all looks good).
     """
@@ -36,22 +45,19 @@ def _sanity_check_results(parsed: dict) -> list:
     for key, val in numerical.items():
         if not isinstance(val, (int, float)):
             continue
-        # Negative width or cross section
-        if any(tag in key.lower() for tag in ("width", "gamma", "sigma")):
-            if val < 0:
-                warnings.append(
-                    f"{key} = {val:.6g} is negative — check signs or kinematics"
-                )
-        # NaN / Inf
         if val != val:  # NaN
-            warnings.append(f"{key} is NaN — likely a division by zero or undefined limit")
+            warnings.append(
+                f"{key} is NaN — likely a division by zero or undefined limit"
+            )
         elif abs(val) == float("inf"):
-            warnings.append(f"{key} is infinite — check for massless divergences or missing regulators")
+            warnings.append(
+                f"{key} is infinite — check for a division by zero or a "
+                f"divergent limit"
+            )
 
-    # Check symbolic results for unevaluated expressions
     for key, val in symbolic.items():
         if isinstance(val, str):
-            if val.strip() == "$Failed" or "$Failed" in val:
+            if "$Failed" in val:
                 warnings.append(
                     f"SYMBOLIC_RESULT[{key}] is $Failed — the expression could not "
                     f"be evaluated (likely a failed Import or missing definition)"
@@ -61,7 +67,9 @@ def _sanity_check_results(parsed: dict) -> list:
             if "ComplexInfinity" in val:
                 warnings.append(f"SYMBOLIC_RESULT[{key}] contains ComplexInfinity")
             if "$Aborted" in val:
-                warnings.append(f"SYMBOLIC_RESULT[{key}] was aborted — consider increasing timeout")
+                warnings.append(
+                    f"SYMBOLIC_RESULT[{key}] was aborted — consider increasing timeout"
+                )
 
     return warnings
 
@@ -133,7 +141,7 @@ def _build_result_output(result: WolframResult, base_directory: str = "",
                 entries.append(f"Results: {', '.join(sym_keys)}")
             if result.results_path:
                 entries.append(f"Sidecar: {result.results_path}")
-            append_finding(base_directory, f"FeynCalc: {script_label}", entries)
+            append_finding(base_directory, f"Wolfram: {script_label}", entries)
         except Exception:
             pass
 
@@ -142,30 +150,39 @@ def _build_result_output(result: WolframResult, base_directory: str = "",
 
 class RunWolframScript(BaseTool):
     """
-    Execute Mathematica/FeynCalc code via wolframscript.
+    Execute Wolfram Language code via wolframscript.
 
-    Saves the script as a standalone .wl file for reproducibility.
-    Returns stdout with any structured results.
+    General-purpose: runs whatever Wolfram Language you supply and assumes
+    no particular package. If your code needs one, load it in the script
+    (e.g. a leading ``<< SomePackage`;``).
 
-    The LLM can embed markers in Print[] statements for structured output:
+    Saves the script as a standalone .wl file for reproducibility and
+    returns stdout together with any structured results.
+
+    Structured output is opt-in — embed markers in Print[] statements and
+    they come back as parsed fields plus a _results.json sidecar next to
+    the script:
         Print["SYMBOLIC_RESULT[name]: ", expr]
         Print["NUMERICAL_RESULT[name]: ", N[expr]]
+        Print["LATEX_RESULT[name]: ", TeXForm[expr]]
         Print["STATUS: complete"]
+    Without markers you still get raw stdout.
 
     Inputs (runtime):
-        code: Mathematica code to execute (string)
+        code: Wolfram Language code to execute (string)
+        script_path: Path to an existing .wl file to execute instead
         script_name: Optional name for the saved .wl file (default: auto-generated)
         timeout: Timeout in seconds (default: 120)
 
     Returns:
-        JSON with: success, stdout, stderr, script_path, execution_time_s,
-        and parsed structured results if present.
+        JSON with: success, script_path, results_path, symbolic, numerical,
+        latex, stdout/stderr as needed, error_hint on failure, and warnings.
     """
 
     # --- Runtime fields (from LLM at call time) ---
     code: Optional[str] = RuntimeField(
         default=None,
-        description="Mathematica/FeynCalc code to execute. Provide this OR script_path, not both."
+        description="Wolfram Language code to execute. Load any package you need inside the code itself. Provide this OR script_path, not both."
     )
     script_path: Optional[str] = RuntimeField(
         default=None,
@@ -189,14 +206,14 @@ class RunWolframScript(BaseTool):
     )
 
     def _run(self) -> str:
-        """Execute Mathematica code from a string or an existing .wl file."""
+        """Execute Wolfram Language code from a string or an existing .wl file."""
         has_code = self.code and self.code.strip()
         has_path = self.script_path and self.script_path.strip()
 
         if not has_code and not has_path:
             return self.format_error(
                 error="Missing Parameter",
-                reason="Provide either 'code' (inline Mathematica) or 'script_path' (path to .wl file)"
+                reason="Provide either 'code' (inline Wolfram Language) or 'script_path' (path to .wl file)"
             )
 
         runner = WolframRunner(
@@ -237,7 +254,7 @@ class RunWolframScript(BaseTool):
 
 class RunWolframScriptBatch(BaseTool):
     """
-    Execute multiple Mathematica/FeynCalc scripts concurrently.
+    Execute multiple Wolfram Language scripts concurrently.
 
     Runs all scripts in parallel via a thread pool and returns all results
     in a single response. Use this instead of multiple sequential

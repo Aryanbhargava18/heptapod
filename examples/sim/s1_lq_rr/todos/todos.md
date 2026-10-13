@@ -18,7 +18,8 @@
 
 - [ ] **Generate UFO from .fr model**
   - Locate: `feynrules/models/S1_LQ_RR.fr` (ALREADY EXISTS)
-  - Call `FeynRulesToUFOTool(model_path="feynrules/models/S1_LQ_RR.fr", output_dir="feynrules/S1_LQ_RR_UFO")`
+  - Call `FeynRulesToUFOTool(model_path="feynrules/models/S1_LQ_RR.fr", lagrangian="LSM + LBSM", output_dir="feynrules/S1_LQ_RR_UFO")`
+  - `lagrangian` is required; this model names its BSM Lagrangian `LBSM`, but that is not a convention. Omit it and the tool lists the symbols the model defines.
   - Verify: check output JSON `"ok": true`, confirm UFO files exist
 
 ---

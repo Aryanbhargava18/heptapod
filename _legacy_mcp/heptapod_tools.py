@@ -165,10 +165,27 @@ def _make_feynrules_tools(base_dir: str) -> list:
     ]
 
 
+def _make_wolfram_tools(base_dir: str) -> list:
+    """Wolfram — generic wolframscript execution (requires Mathematica)."""
+    import config
+    from tools.wolfram import RunWolframScript, RunWolframScriptBatch
+    return [
+        _named(RunWolframScript(
+            base_directory=base_dir,
+            wolframscript_path=config.wolframscript_path,
+        ), "RunWolframScript"),
+        _named(RunWolframScriptBatch(
+            base_directory=base_dir,
+            wolframscript_path=config.wolframscript_path,
+        ), "RunWolframScriptBatch"),
+    ]
+
+
 def _make_eda_tools(base_dir: str) -> list:
     """EDA (Exact Diagrammatic Analysis) — tree-level calculations via FeynCalc (requires Mathematica)."""
     import config
-    from tools.eda import RunWolframScript, RunWolframScriptBatch, ComputeSymbolicAmplitude, ConvertToPython, SimplifyResult, SimplifyResultBatch
+    from tools.wolfram import RunWolframScript, RunWolframScriptBatch
+    from tools.eda import ComputeSymbolicAmplitude, ConvertToPython, SimplifyResult, SimplifyResultBatch
     return [
         _named(RunWolframScript(
             base_directory=base_dir,
@@ -207,7 +224,8 @@ def _make_eda_toolkit_tools(base_dir: str) -> list:
     """
     import config
     from tools.nda import EstimateDecayWidthNDATool, EstimateDecayWidthFormulaNDATool
-    from tools.eda import RunWolframScript, RunWolframScriptBatch, ComputeSymbolicAmplitude, ConvertToPython, SimplifyResult, SimplifyResultBatch
+    from tools.wolfram import RunWolframScript, RunWolframScriptBatch
+    from tools.eda import ComputeSymbolicAmplitude, ConvertToPython, SimplifyResult, SimplifyResultBatch
     from tools.pdg import PDGDatabaseTool
     return [
         # EDA (exact path)
@@ -308,6 +326,7 @@ TOOL_GROUPS: dict[str, Callable[[str], list]] = {
     "pythia":           _make_pythia_tools,
     "event_gen":        _make_event_gen_tools,
     "feynrules":        _make_feynrules_tools,
+    "wolfram":          _make_wolfram_tools,
     "eda":              _make_eda_tools,
     "nda_toolkit":              _make_nda_toolkit_tools,
     "eda_toolkit":              _make_eda_toolkit_tools,

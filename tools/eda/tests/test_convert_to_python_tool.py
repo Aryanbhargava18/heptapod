@@ -22,7 +22,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tools.eda.wolfram_runner import _save_results_sidecar
+from tools.wolfram.wolfram_runner import _save_results_sidecar
 from tools.eda.convert_to_python_tool import ConvertToPython
 
 

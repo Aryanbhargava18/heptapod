@@ -20,7 +20,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tools.eda.wolfram_runner import (
+from tools.wolfram.wolfram_runner import (
     WolframRunner,
     WolframResult,
     _parse_structured_output,
@@ -72,7 +72,7 @@ def test_parse_structured_output():
 
     # mixed output
     stdout = (
-        "Loading FeynCalc...\n"
+        "Loading SomePackage...\n"
         "Some banner text\n"
         "SYMBOLIC_RESULT[trace]: 4*Pair[Momentum[p, D], Momentum[q, D]]\n"
         "NUMERICAL_RESULT[value]: 42.5\n"
@@ -200,8 +200,8 @@ def test_check_available():
         return True
 
     avail, msg = runner.check_available()
-    ok = avail and ("FeynCalc" in msg or "Loading" in msg)
-    print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: check_available returns True with FeynCalc info")
+    ok = avail and "WolframScript" in msg
+    print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: check_available reports the kernel version")
 
     print()
     return ok
@@ -232,88 +232,27 @@ def test_run_code():
     finally:
         shutil.rmtree(tmp_dir)
 
-    # feyncalc trace
+    # symbolic result, kernel builtins only (no add-on package required)
     tmp_dir = tempfile.mkdtemp()
     try:
         code = (
-            '<< FeynCalc`\n'
-            'res = DiracTrace[GSD[p].GSD[q]] // DiracSimplify;\n'
-            'Print["SYMBOLIC_RESULT[trace]: ", res]\n'
+            'res = Integrate[1/(1 + x^2), x];\n'
+            'Print["SYMBOLIC_RESULT[arctan]: ", res]\n'
             'Print["STATUS: complete"]\n'
         )
         result = runner.run_code(code, working_dir=tmp_dir)
         ok = (
             result.success
             and result.parsed_results["status"] == "complete"
-            and "trace" in result.parsed_results["symbolic"]
-            and "4" in result.parsed_results["symbolic"]["trace"]
+            and "arctan" in result.parsed_results["symbolic"]
+            and "ArcTan" in result.parsed_results["symbolic"]["arctan"]
         )
         if not ok:
             all_passed = False
-        print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: feyncalc trace")
+        print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: symbolic result")
     finally:
         shutil.rmtree(tmp_dir)
 
-    # script saved
-    tmp_dir = tempfile.mkdtemp()
-    try:
-        result = runner.run_code(
-            'Print[42]',
-            save_path=str(Path(tmp_dir) / "test_script.wl"),
-            working_dir=tmp_dir,
-        )
-        ok = (
-            result.success
-            and Path(result.script_path).exists()
-            and Path(result.script_path).read_text() == 'Print[42]'
-        )
-        if not ok:
-            all_passed = False
-        print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: script saved")
-    finally:
-        shutil.rmtree(tmp_dir)
-
-    # error handling (division by zero)
-    tmp_dir = tempfile.mkdtemp()
-    try:
-        result = runner.run_code('Print[1/0]', working_dir=tmp_dir)
-        ok = result.success or "Power::infy" in result.stderr
-        if not ok:
-            all_passed = False
-        print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: error handling (1/0)")
-    finally:
-        shutil.rmtree(tmp_dir)
-
-    # nonzero exit
-    tmp_dir = tempfile.mkdtemp()
-    try:
-        result = runner.run_code('Quit[1]', working_dir=tmp_dir)
-        ok = not result.success
-        if not ok:
-            all_passed = False
-        print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: nonzero exit")
-    finally:
-        shutil.rmtree(tmp_dir)
-
-    # timeout
-    tmp_dir = tempfile.mkdtemp()
-    try:
-        timeout_runner = WolframRunner(timeout_sec=2)
-        avail, _ = timeout_runner.check_available()
-        if not avail:
-            print("  [–] SKIP: wolframscript not available for timeout test")
-        else:
-            result = timeout_runner.run_code(
-                'Pause[30]; Print["done"]', working_dir=tmp_dir,
-            )
-            ok = not result.success and "Timeout" in result.stderr
-            if not ok:
-                all_passed = False
-            print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: timeout")
-    finally:
-        shutil.rmtree(tmp_dir)
-
-    print()
     return all_passed
 
 

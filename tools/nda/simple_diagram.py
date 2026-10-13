@@ -148,6 +148,10 @@ class Vertex:
     type: str
     coupling: Union[str, float, Dict[str, float]]  # Coupling name, value, or dict (e.g., chiral {"gL": ..., "gR": ...})
     fields: Optional[List[str]] = None
+    #: Dirac structure on each bilinear of a contact operator, e.g. ["V", "A"].
+    structures: Optional[List[str]] = None
+    #: Which external legs form each bilinear, e.g. [[0, 2], [1, 3]].
+    pairing: Optional[List[List[int]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""

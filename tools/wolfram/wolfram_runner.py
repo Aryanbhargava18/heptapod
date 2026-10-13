@@ -7,18 +7,23 @@
 """
 Subprocess manager for wolframscript execution.
 
-Handles running Mathematica code via wolframscript, capturing output,
-and saving scripts for reproducibility.
+Runs Wolfram Language code via wolframscript, captures output, saves each
+script as a standalone .wl file for reproducibility, and parses the optional
+structured-result markers a script may print.
+
+Domain-neutral by construction: nothing here loads or assumes any Wolfram
+package. A script that wants one loads it itself.
 """
 
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 
 
 @dataclass
@@ -43,63 +48,51 @@ RESULT_MARKERS = {
 }
 
 
-def _clean_latex_symbols(tex: str) -> str:
-    r"""Post-process TeXForm output to produce cleaner LaTeX.
+def tidy_text_symbols(tex: str) -> str:
+    r"""Turn TeXForm's ``\text{...}`` wrappers into subscript notation.
 
-    Mathematica's TeXForm wraps bare symbols in \text{}, e.g.
-    \text{mf} for the mass of fermion f.  This function converts
-    common patterns to proper LaTeX subscript notation.
+    Mathematica's ``TeXForm`` renders a bare multi-letter symbol as
+    ``\text{ab}``, which typesets as upright text rather than as a
+    subscripted variable.  This rewrites ``\text{Xy}`` to ``X_y`` and
+    ``\text{Xyz}`` to ``X_{yz}``, which is what a symbol of the form
+    "letter + qualifier" almost always means.
+
+    This is a purely typographic rule with no notion of what the symbols
+    stand for.  A caller that knows its own symbol vocabulary should pass
+    a ``latex_postprocess`` callable to :class:`WolframRunner` instead;
+    it runs in place of this default.
     """
-    # Specific known symbols (order matters: longer patterns first)
-    _SYMBOL_MAP = {
-        # Masses
-        r"\text{mfbar}": r"m_{\bar{f}}",
-        r"\text{mf1}": r"m_{f_1}",
-        r"\text{mf2}": r"m_{f_2}",
-        r"\text{mf}": r"m_f",
-        r"\text{mS}": r"m_S",
-        r"\text{mV}": r"m_V",
-        r"\text{mH}": r"m_H",
-        r"\text{mW}": r"m_W",
-        r"\text{mZ}": r"m_Z",
-        r"\text{mProp0}": r"m_{\text{prop}}",
-        # Couplings
-        r"\text{gS}": r"g_S",
-        r"\text{gP}": r"g_P",
-        r"\text{gV}": r"g_V",
-        r"\text{gA}": r"g_A",
-        r"\text{gL}": r"g_L",
-        r"\text{gR}": r"g_R",
-        # Generic coupling
-        r"\text{yb}": r"y_b",
-        r"\text{yt}": r"y_t",
-        r"\text{ye}": r"y_e",
-    }
-
-    for pattern, replacement in _SYMBOL_MAP.items():
-        tex = tex.replace(pattern, replacement)
-
-    # Generic fallback: \text{XY} where X is a letter and Y is a letter/digit
-    # e.g. \text{mX} → m_X, \text{gX} → g_X
-    import re
-    tex = re.sub(
+    return re.sub(
         r"\\text\{([a-zA-Z])([a-zA-Z0-9]+)\}",
-        lambda m: f"{m.group(1)}_{{{m.group(2)}}}" if len(m.group(2)) > 1 else f"{m.group(1)}_{m.group(2)}",
+        lambda m: (
+            f"{m.group(1)}_{{{m.group(2)}}}"
+            if len(m.group(2)) > 1
+            else f"{m.group(1)}_{m.group(2)}"
+        ),
         tex,
     )
 
-    return tex
 
-
-def _parse_structured_output(stdout: str) -> Dict[str, Any]:
+def _parse_structured_output(
+    stdout: str,
+    latex_postprocess: Optional[Callable[[str], str]] = None,
+) -> Dict[str, Any]:
     """Extract structured results from wolframscript stdout.
 
-    The LLM can embed markers in Print[] statements:
-        Print["SYMBOLIC_RESULT[ampSquared]: ", result]
-        Print["NUMERICAL_RESULT[width_GeV]: ", N[width]]
-        Print["LATEX_RESULT[width]: ", TeXForm[width]]
+    A script opts in to structured output by embedding markers in its
+    Print[] statements:
+        Print["SYMBOLIC_RESULT[antiderivative]: ", result]
+        Print["NUMERICAL_RESULT[root]: ", N[root]]
+        Print["LATEX_RESULT[result]: ", TeXForm[result]]
         Print["STATUS: complete"]
+
+    Markers are optional; a script that prints nothing recognisable
+    still returns its raw stdout to the caller.
+
+    ``latex_postprocess`` rewrites each LATEX_RESULT value, replacing
+    the default :func:`tidy_text_symbols`.
     """
+    clean_latex = latex_postprocess or tidy_text_symbols
     parsed = {"symbolic": {}, "numerical": {}, "latex": {}, "status": None}
 
     for line in stdout.splitlines():
@@ -120,7 +113,7 @@ def _parse_structured_output(stdout: str) -> Dict[str, Any]:
 
         m = RESULT_MARKERS["LATEX_RESULT"].match(line)
         if m:
-            parsed["latex"][m.group(1)] = _clean_latex_symbols(m.group(2))
+            parsed["latex"][m.group(1)] = clean_latex(m.group(2))
             continue
 
         m = RESULT_MARKERS["STATUS"].match(line)
@@ -153,63 +146,143 @@ def _save_results_sidecar(script_path: str, parsed: Dict[str, Any]) -> Optional[
         return None
 
 
+# The path config.example.py ships with. It means "not configured yet", so
+# honouring it verbatim would turn every call into a "not found" failure on a
+# machine that does have Wolfram installed.
+_PLACEHOLDER_PATHS = {
+    "/path/to/wolframscript",
+    "path/to/wolframscript",
+}
+
+
+def _is_placeholder(cand: Optional[str]) -> bool:
+    """True for an unset-by-another-name path."""
+    if not cand or not str(cand).strip():
+        return True
+    return str(cand).strip() in _PLACEHOLDER_PATHS
+
+
+def resolve_wolframscript(explicit: Optional[str] = None) -> str:
+    """Best-effort location of a ``wolframscript`` executable.
+
+    Resolution order, first hit wins:
+
+      1. ``explicit``, verbatim, when it is set and not the config placeholder.
+      2. ``config.wolframscript_path``, on the same terms.
+      3. ``wolframscript`` on PATH.
+      4. The default install locations for macOS and Linux.
+      5. ``"wolframscript"``, so the caller still gets a subprocess-level
+         error naming what was looked for.
+
+    A real path is returned verbatim rather than existence-tested: a caller
+    that names an executable has stated its intent, and a wrong path should
+    fail loudly rather than be silently swapped for another install. Only the
+    placeholder is treated as "unset", which is what it means.
+    """
+    if not _is_placeholder(explicit):
+        return str(explicit).strip()
+
+    try:
+        import config
+        configured = getattr(config, "wolframscript_path", None)
+        if not _is_placeholder(configured):
+            return str(configured).strip()
+    except ImportError:
+        pass
+
+    found = shutil.which("wolframscript")
+    if found:
+        return found
+
+    for cand in (
+        "/Applications/Mathematica.app/Contents/MacOS/wolframscript",
+        "/usr/local/bin/wolframscript",
+    ):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+
+    return "wolframscript"
+
+
 class WolframRunner:
-    """Runs Mathematica code via wolframscript subprocess."""
+    """Runs Wolfram Language code via a ``wolframscript`` subprocess.
+
+    Knows nothing about what the scripts compute: it writes code to a
+    ``.wl`` file, runs it, and parses any structured markers the script
+    chose to print.  Domain-specific behaviour is supplied by the caller
+    through ``latex_postprocess``.
+    """
 
     def __init__(
         self,
         wolframscript_path: str = None,
         timeout_sec: int = 120,
+        latex_postprocess: Optional[Callable[[str], str]] = None,
     ):
-        if wolframscript_path is None:
-            try:
-                import config
-                wolframscript_path = config.wolframscript_path
-            except (ImportError, AttributeError):
-                wolframscript_path = "wolframscript"
-
-        self.wolframscript_path = wolframscript_path
+        self.wolframscript_path = resolve_wolframscript(wolframscript_path)
         self.timeout_sec = timeout_sec
+        self.latex_postprocess = latex_postprocess
 
     def check_available(self) -> tuple:
-        """Verify wolframscript is installed and FeynCalc is loadable.
+        """Verify ``wolframscript`` runs and can evaluate an expression.
+
+        Says nothing about which Wolfram packages are installed; use
+        :meth:`check_package` for that.
 
         Returns:
             (available: bool, message: str)
         """
-        # Check wolframscript exists
         try:
             proc = subprocess.run(
-                [self.wolframscript_path, "-code", "Print[42]"],
+                [self.wolframscript_path, "-code",
+                 'Print["WolframScript " <> ToString[$VersionNumber]]'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=30,
                 check=False,
                 text=True,
             )
-            if proc.returncode != 0 or "42" not in proc.stdout:
-                return (False, f"wolframscript failed: {proc.stderr.strip()}")
         except FileNotFoundError:
             return (False, f"wolframscript not found at: {self.wolframscript_path}")
         except subprocess.TimeoutExpired:
             return (False, "wolframscript timed out on basic test")
 
-        # Check FeynCalc is loadable
+        if proc.returncode != 0 or "WolframScript" not in proc.stdout:
+            return (False, f"wolframscript failed: {proc.stderr.strip()}")
+        return (True, proc.stdout.strip())
+
+    def check_package(self, package: str, timeout_sec: int = 60) -> tuple:
+        """Verify a named Wolfram package loads.
+
+        Loads ``package`` (a context name without the backtick, as in
+        ``check_package("SomePackage")``) and echoes back whatever it
+        printed, which for most packages includes a version banner.
+
+        Callers that depend on a particular package own that dependency;
+        this method only reports whether it is there.
+
+        Returns:
+            (available: bool, message: str)
+        """
+        code = f'<< {package}`; Print["{package} loaded"]'
         try:
             proc = subprocess.run(
-                [self.wolframscript_path, "-code",
-                 '<< FeynCalc`; Print["FeynCalc " <> $FeynCalcVersion]'],
+                [self.wolframscript_path, "-code", code],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=60,
+                timeout=timeout_sec,
                 check=False,
                 text=True,
             )
-            if proc.returncode != 0:
-                return (False, f"FeynCalc failed to load: {proc.stderr.strip()}")
-            return (True, proc.stdout.strip())
+        except FileNotFoundError:
+            return (False, f"wolframscript not found at: {self.wolframscript_path}")
         except subprocess.TimeoutExpired:
-            return (False, "FeynCalc loading timed out (60s)")
+            return (False, f"{package} loading timed out ({timeout_sec}s)")
+
+        if proc.returncode != 0 or f"{package} loaded" not in proc.stdout:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            return (False, f"{package} failed to load: {detail}")
+        return (True, proc.stdout.strip())
 
     def run_script(
         self,
@@ -269,7 +342,9 @@ class WolframRunner:
             )
 
         elapsed = time.monotonic() - t0
-        parsed = _parse_structured_output(proc.stdout or "")
+        parsed = _parse_structured_output(
+            proc.stdout or "", latex_postprocess=self.latex_postprocess
+        )
 
         # Save results sidecar JSON alongside the .wl script
         results_path = None
@@ -314,7 +389,7 @@ class WolframRunner:
             import hashlib
             code_hash = hashlib.md5(code.encode()).hexdigest()[:8]
             ts = int(time.time())
-            save_path = str(scripts_dir / f"feyncalc_{ts}_{code_hash}.wl")
+            save_path = str(scripts_dir / f"wolfram_{ts}_{code_hash}.wl")
 
         save_path = str(Path(save_path).resolve())
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)

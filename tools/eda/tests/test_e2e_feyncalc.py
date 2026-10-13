@@ -27,8 +27,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from tools.eda.wolfram_runner import WolframRunner
-from tools.eda.run_wolfram_tool import RunWolframScript
+from tools.wolfram import WolframRunner, RunWolframScript
 
 
 def _check_wolfram():
@@ -122,7 +121,7 @@ def test_h_to_bb():
             all_passed = False
         print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: stdout dropped (lean returns)")
 
-        width = _parse_num(result["numerical_results"]["width_GeV"])
+        width = _parse_num(result["numerical"]["width_GeV"])
         ok = 0.001 < width < 0.005
         if not ok:
             all_passed = False
@@ -211,7 +210,7 @@ def test_z_to_ee():
             all_passed = False
         print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: stdout dropped (lean returns)")
 
-        width = _parse_num(result["numerical_results"]["width_GeV"])
+        width = _parse_num(result["numerical"]["width_GeV"])
         ok = 0.05 < width < 0.12
         if not ok:
             all_passed = False
@@ -269,7 +268,7 @@ def test_basic_trace():
             all_passed = False
         print(f"  {'[✓] PASS' if ok else '[✗] FAIL'}: stdout dropped (lean returns)")
 
-        val = _parse_num(result["numerical_results"]["trace_at_pq1"])
+        val = _parse_num(result["numerical"]["trace_at_pq1"])
         ok = abs(val - 4.0) < 0.01
         if not ok:
             all_passed = False
