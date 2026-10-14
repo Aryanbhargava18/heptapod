@@ -197,11 +197,12 @@ def test_unknown_type_still_raises_with_the_spelling_list(gen):
 def test_bosonic_type_strings_remain_unconstrained():
     """Free-form means a name that makes NO structural claim.
 
-    This used to include "svv" over scalar-scalar-vector legs. 2.16.3 rejects
-    that: a letter-spelled type declares its own spin content, so `svv` over
-    (0, 0, 1) is a contradiction, not a free choice of name. A name that
-    claims nothing -- "anything-at-all" -- is still accepted, which is the
-    freedom this test was written to protect.
+    This used to include "svv" over scalar-scalar-vector legs, and
+    "anything-at-all". Neither survives: 2.16.3 made a letter-spelled type
+    declare its own spin content, and 2.17.0 closed the bosonic name sets, so
+    an unrecognised name is refused with the keys valid for the declared
+    spins. What the test now protects is that the ACCEPTED names for a
+    configuration all work, including the `-3pt` spellings in circulation.
     """
     from tools.nda.symbolic_diagram import (
         parse_symbolic_diagram, build_diagram_from_symbolic,
@@ -209,7 +210,7 @@ def test_bosonic_type_strings_remain_unconstrained():
     from tools.eda.feyncalc_codegen import SymbolicFeynCalcCodeGenerator
     # An empty type is rejected upstream by SymbolicVertex, which requires
     # the field; "free" here means any NAME, not the absence of one.
-    for vt in ("ssv", "anything-at-all", "scalar-3pt"):
+    for vt in ("ssv", "scalar-3pt", "derivative"):
         spec = {"topology": "decay_1to2",
                 "initial": [{"label": "S", "spin": 0}],
                 "final": [{"label": "Sp", "spin": 0}, {"label": "V", "spin": 1}],

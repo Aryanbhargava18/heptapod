@@ -234,8 +234,8 @@ def test_the_shorthand_is_enough_to_check_but_not_to_dispatch():
     assert "must agree" not in msg, msg
 
 
-@pytest.mark.parametrize("vtype", ["svv", "anything-at-all", "S-V-V"])
-def test_bosonic_dispatch_still_accepts_consistent_and_free_form_names(vtype):
+@pytest.mark.parametrize("vtype", ["svv", "S-V-V", "contact"])
+def test_bosonic_dispatch_accepts_the_names_in_its_closed_set(vtype):
     spec = {"topology": "decay_1to2",
             "initial": [{"label": "phi", "spin": 0, "mass": "mS"}],
             "final": [{"label": "V1", "spin": 1, "mass": "m1"},

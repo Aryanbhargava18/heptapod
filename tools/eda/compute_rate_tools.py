@@ -338,6 +338,11 @@ class _ComputeRateBase(BaseTool):
             if amb:
                 output.setdefault("warnings", []).append(amb)
                 break
+        for d in (built or []):
+            rep = _identical_field_vertex_warning(d)
+            if rep:
+                output.setdefault("warnings", []).append(rep)
+                break
 
         if gen.channel:
             output["channel"] = gen.channel.name
@@ -406,6 +411,50 @@ def _is_conjugate_set(labels) -> bool:
             if b[len(a):] in _CONJ_SUFFIXES:
                 return True
     return False
+
+
+
+def _identical_field_vertex_warning(diagram) -> str:
+    """Warn when two legs share a label, so the vertex factor needs the
+    combinatorial factor from the repeated field.
+
+    NOT APPLIED, stated. The emitted SVV rule is the distinct-field one, `i g`,
+    so `L = g S V^mu V_mu` needs `2*g` -- but a caller following the
+    documentation already passes that, and doubling silently would give them
+    4g. And the direction is convention-dependent: `L = -(mu/2) phi chi^2`
+    carries an explicit 1/2 that the two contractions cancel, so its rule is
+    `-i mu` and `"mu"` is right. Nothing in a diagram says which normalisation
+    the caller wrote down.
+
+    So both cases are given and neither asserted. This fires on calls that are
+    already correct, which is the acceptable direction for a reminder whose
+    absence has cost decay_S_to_VV part (a) a stage in every run since 2.16.2.
+    """
+    from tools.eda.fc_symbols import _mass_symbol
+    final = list(getattr(diagram, "final", []) or [])
+    if len(final) < 2:
+        return ""
+    groups = {}
+    for idx, p in enumerate(final):
+        if not p.label:
+            continue
+        groups.setdefault((p.label, p.spin, str(p.mass)), []).append(idx)
+    repeated = [k for k, v in groups.items() if len(v) >= 2]
+    if not repeated:
+        return ""
+    label = repeated[0][0]
+    return (
+        f"final-state legs {label!r} share a label, so they are the same "
+        f"field and the VERTEX factor carries the combinatorial factor from "
+        f"the repeated field -- `coupling` is the Feynman-rule coefficient, "
+        f"not the Lagrangian's. Which way it goes depends on your "
+        f"normalisation: L = g S V^mu V_mu has rule 2 i g, so pass \"2*g\"; "
+        f"L = -(mu/2) phi chi^2 already carries the 1/2 that the two "
+        f"contractions cancel, so pass \"mu\". Either mistake costs a factor "
+        f"of 4. The identical-particle SYMMETRY factor is separate and has "
+        f"been applied for you (see `symmetry_factor`); do not fold it in "
+        f"as well."
+    )
 
 
 def _ambiguous_identity_warning(diagram) -> str:
@@ -543,8 +592,14 @@ class ComputeDecayRate(_ComputeRateBase):
     Input:
         diagram:  SymbolicDiagram dict (same format ComputeSymbolicAmplitude
                   takes: 'initial', 'final', 'vertices', optional
-                  'propagators'; every particle needs a 'spin'). A
-                  particle's 'mass' NAMES its mass symbol -- "mass": "mS"
+                  'propagators'). EVERY PARTICLE NEEDS A 'spin', and the
+                  spins DECIDE which vertex is built: a Dirac fermion is 0.5,
+                  a massive or massless vector is 1, a scalar is 0. Declaring
+                  a fermion as spin 1 does not fail -- it silently builds a
+                  vector vertex and returns a width for a different process.
+                  The output's `vertex_structures` names what was built, so
+                  check it: a fermion decay must read ["VFF"] or ["SFF"].
+                  A particle's 'mass' NAMES its mass symbol -- "mass": "mS"
                   puts mS in the formula, so `values` must be keyed to mS.
                   Omit 'mass' and the symbol defaults to m<label>: a particle
                   labelled "V1" gets mV1. A number pins the mass instead.
@@ -595,48 +650,22 @@ class ComputeDecayRate(_ComputeRateBase):
           "values": {"g": 0.8, "mS": 950, "m1": 200, "m2": 300}
         }
 
-    IDENTICAL PARTICLES AND THE PREFACTORS. Two final-state particles are
-    identical IF AND ONLY IF THEY SHARE A LABEL. That is the whole rule, and
-    it decides a factor of 2:
+    IDENTICAL PARTICLES. Two final-state particles are identical IF AND ONLY
+    IF THEY SHARE A LABEL, which decides a factor of 2. Writing one particle
+    as "chi"/"chi" applies the 1/2! symmetry factor; writing it as
+    "chi1"/"chi2" does not, even at equal mass -- a mass-degenerate doublet is
+    a real configuration. So labelling one particle two ways halves the width;
+    an equal-spin, equal-mass pair with different labels returns a warning
+    saying which reading was used, and `symmetry_factor` on the diagram states
+    it outright.
 
-        "final": [{"label": "chi", ...}, {"label": "chi", ...}]
-            -> one particle written twice. symmetry factor 2, i.e. the width
-               carries 1/2!.
-        "final": [{"label": "chi1", ...}, {"label": "chi2", ...}]
-            -> two DISTINCT particles, even with the same mass. Symmetry
-               factor 1. Equal mass is NOT read as identity, because a
-               mass-degenerate doublet is a real configuration and applying
-               1/2! to it would be wrong.
+    The output reports the conventions the number was built with:
+    `symmetry_factor`, `n_initial_spin_states` (2J+1 for the parent: 1 scalar,
+    2 fermion, 3 massive vector), and `vertex_structures`.
 
-    So labelling one particle two ways silently halves the width. Write
-    identical particles with one label, or set `symmetry_factor` on the
-    diagram to state the factor outright. A final state with equal spin, equal
-    mass and different labels returns a WARNING saying which reading was used.
-
-    The vertex factor is a separate question the caller still owns. For
-    L = -(mu/2) phi chi^2 the Feynman rule is -i mu, NOT -i mu/2: the 1/2 is
-    cancelled by the two ways of contracting the identical fields. Passing
-    "mu/2" here and letting the tool apply 1/2! counts the same factor twice.
-
-    Both prefactors are REPORTED in the output -- `symmetry_factor` and
-    `n_initial_spin_states` (2J+1 for the parent: 1 scalar, 2 fermion, 3
-    massive vector) -- so the conventions the number was built with are
-    visible without reading the generated script.
-
-    `vertex_structures` reports which vertex was actually built, e.g.
-    ["VFF"] for a vector plus two fermions, ["SFF"] scalar plus two fermions,
-    ["SSS"], ["SSV"], ["SVV"], ["VVV"]. THE LEG SPINS DECIDE THIS, not the
-    type name, so check it against the process you meant: three legs declared
-    `spin: 1` give ["VVV"] -- a triple-gauge vertex -- even if you called the
-    type "FFV". The list is deduplicated, so a diagram with two VFF vertices
-    reports one entry.
-
-    VERTEX TYPES. The `type` string carries the physics and is AUTHORITATIVE:
-    it decides the Feynman rule, and `coupling` must supply exactly the names
-    that rule takes. A type that is not listed, or a coupling that cannot
-    satisfy the listed one, is REFUSED rather than guessed at.
-
-    The rightmost column is each type's coupling contract:
+    VERTEX TYPES. The `type` decides the Feynman rule and `coupling` must
+    supply exactly the names that rule takes; neither is guessed at. The
+    rightmost column is each type's coupling contract:
 
       SFF (scalar/pseudoscalar -> fermion pair)
         "yukawa" / "scalar"          I g                            takes g
@@ -661,12 +690,9 @@ class ComputeDecayRate(_ComputeRateBase):
     as shorthand and derives the suffixes, so `"y"` under a (gV, gA) contract
     means yV, yA.
 
-    Anything else raises, naming what was expected. In particular a two-entry
-    dict on a one-coupling type is ambiguous rather than "use the first", and
-    the wrong keys on a two-coupling type is an error rather than a silent
-    fall back to the contract's own names -- which would return a formula in
-    symbols you never supplied, so `values` would match nothing and the
-    number would simply go missing.
+    Anything else raises, naming what was expected: an ambiguous dict is not
+    resolved by taking the first entry, and wrong keys are not filled in from
+    the contract's own names.
 
       Bosonic (SSS, SSV, SVV, VVV) dispatches on the SPIN configuration, so
       any type string is accepted there -- "ssv", "svv", "vvv" read best.
@@ -675,31 +701,23 @@ class ComputeDecayRate(_ComputeRateBase):
         [0,1,1] SVV    I g eps1.eps2
         [1,1,1] VVV    Yang-Mills triple gauge, ALL-INCOMING momenta
 
-    TWO THINGS THE TOOL CANNOT INFER FOR YOU:
+    `coupling` IS THE FEYNMAN-RULE COEFFICIENT, not the Lagrangian's, with the
+    factor from repeated fields folded in by you. The table above implements
+    ``i g``, the rule for distinct fields, so:
 
-    1. IDENTICAL FIELDS IN THE LAGRANGIAN DOUBLE THE VERTEX. For
-       ``L = g S V_mu V^mu`` the Feynman rule is ``2 i g eta_{mu nu}``, because
-       both V fields can contract with either leg. The vertex table implements
-       ``i g``, the rule for ``L = g S V1.V2`` with distinct fields, so pass
-       ``coupling: "2*g"`` when the two legs are the same field. Note the
-       final-state symmetry factor 1/2 IS applied automatically -- only the
-       vertex factor is yours. Getting this wrong costs a factor of 4 in the
-       width, which looks like a physics error and is not.
+        L = g S V^mu V_mu      identical V    pass "2*g"
+        L = -(mu/2) phi chi^2  identical chi  pass "mu"   (its 1/2 cancels
+                                                           the two contractions)
 
-       The scalar case runs the other way and needs nothing extra:
-       ``L = -(mu/2) phi chi^2`` already carries the 1/2 that the two
-       contractions cancel, so its rule is ``-i mu`` and you pass ``"mu"``.
-       Passing ``"mu/2"`` there costs the same factor of 4. In both cases
-       `coupling` is the Feynman-rule coefficient, not the Lagrangian's.
+    Either mistake costs a factor of 4 in the width. The identical-particle
+    symmetry factor is separate and applied for you.
 
-    2. A MASSLESS MEDIATOR MUST BE DECLARED IN THE DIAGRAM, not substituted
-       later. The spin-1 propagator numerator is chosen when the code is
-       GENERATED, from the propagator's declared mass: leave it symbolic and
-       you get the massive form ``-g_{mu nu} + q_mu q_nu / m^2``, which divides
-       by zero if you then pass ``mProp0 -> 0`` in `values`. Write
-       ``{"label": "V", "spin": 1, "mass": 0}`` and the Feynman-gauge
-       ``-g_{mu nu}`` is emitted instead. (Same for ComputeCrossSection, where
-       an s-channel massless vector is the common case.)
+    A MASSLESS MEDIATOR MUST BE DECLARED IN THE DIAGRAM, not substituted later.
+    The spin-1 propagator numerator is chosen when the code is GENERATED, from
+    the propagator's declared mass: leave it symbolic and you get the massive
+    form ``-g_{mu nu} + q_mu q_nu / m^2``, which divides by zero if you then
+    pass ``mProp0 -> 0`` in `values`. Write
+    ``{"label": "V", "spin": 1, "mass": 0}`` instead.
     """
 
     diagram: Optional[Dict[str, Any]] = RuntimeField(
@@ -789,7 +807,14 @@ class ComputeCrossSection(_ComputeRateBase):
     RunWolframScript call is needed.
 
     Input:
-        diagram:  SymbolicDiagram dict, as ComputeDecayRate takes.
+        diagram:  SymbolicDiagram dict, as ComputeDecayRate takes. EVERY
+                  PARTICLE NEEDS A 'spin' and the spins DECIDE which vertex
+                  is built -- a Dirac fermion is 0.5, a vector 1, a scalar 0;
+                  declaring a fermion as spin 1 silently builds a vector
+                  vertex. A particle's 'mass' NAMES its mass symbol, and
+                  omitting it defaults to m<label>, so key `values` to
+                  whichever symbol results. `vertex_structures` in the output
+                  names what was built.
         diagrams: several specs to add coherently (s/t/u interference).
         channel:  's', 't', 'u' or 'contact' for an exchange diagram. If
                   omitted, s-channel is assumed and the assumption is
@@ -821,6 +846,25 @@ class ComputeCrossSection(_ComputeRateBase):
     (`L = g S V^mu V_mu`) need "2*g", while `L = -(mu/2) phi chi^2` needs just
     "mu" -- its 1/2 already cancels the two contractions. The
     identical-particle symmetry factor is separate and applied for you.
+
+    Example -- s-channel scalar exchange between fermion pairs. A massless
+    mediator must be declared with mass 0 (see below); `values` is keyed to
+    the symbols the declarations imply::
+
+        {
+          "diagram": {
+            "topology": "scattering_2to2",
+            "initial": [{"label": "f1", "spin": 0.5, "mass": "m1"},
+                        {"label": "f2", "spin": 0.5, "mass": "m1"}],
+            "final":   [{"label": "f3", "spin": 0.5, "mass": "m3"},
+                        {"label": "f4", "spin": 0.5, "mass": "m3"}],
+            "propagators": [{"label": "phi", "spin": 0, "mass": "mphi"}],
+            "vertices": [{"type": "yukawa", "coupling": "y"},
+                         {"type": "yukawa", "coupling": "y"}]
+          },
+          "channel": "s", "sqrt_s": 1000,
+          "values": {"y": 0.5, "m1": 10, "m3": 20, "mphi": 300}
+        }
 
     IDENTICAL PARTICLES AND THE PREFACTORS. Two final-state particles are
     identical iff they SHARE A LABEL; equal mass alone is not read as identity

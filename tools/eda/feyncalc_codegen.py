@@ -449,6 +449,98 @@ def _structures_used(spin_sets) -> list:
     return sorted(out)
 
 
+
+#: Accepted type names per BOSONIC spin configuration. The fermionic
+#: bilinears have been closed since 2.9.1 (an unknown VFF or SFF type raises
+#: and lists its spellings); these four never were, so they accepted any
+#: string and a fermion decay mis-declared as three spin-1 legs could name its
+#: vertex anything and still get the triple-gauge rule.
+#:
+#: Deliberately generous. `scalar`, `vector`, `gauge` and `left-handed` are in
+#: circulation for bosonic vertices here through the `-3pt` spellings, which
+#: `_normalize_vtype` strips onto them, so refusing those would break existing
+#: callers for no gain. The structure is still decided by the spins; this set
+#: only governs which names are refused outright.
+BOSONIC_VERTEX_TYPES = {
+    "SSS": {"spins": (0.0, 0.0, 0.0),
+            "spellings": ("sss", "scalar", "trilinear", "cubic")},
+    "SSV": {"spins": (0.0, 0.0, 1.0),
+            "spellings": ("ssv", "derivative", "gauge", "scalar", "vector")},
+    "SVV": {"spins": (0.0, 1.0, 1.0),
+            "spellings": ("svv", "contact", "scalar", "vector", "gauge",
+                          "field-strength", "dim5-ff",
+                          "dual-field-strength", "dim5-ff-dual")},
+    "VVV": {"spins": (1.0, 1.0, 1.0),
+            "spellings": ("vvv", "triple-gauge", "yang-mills", "gauge",
+                          "vector")},
+}
+
+#: The fermionic configuration a caller most likely meant when a bosonic set
+#: refuses their name: both fermionic bilinears, with their own spins.
+_FERMIONIC_HINT = (
+    ("VFF", (0.5, 0.5, 1.0)),
+    ("SFF", (0.0, 0.5, 0.5)),
+)
+
+
+def _bosonic_kind_for_spins(spins):
+    """The bosonic configuration a spin multiset belongs to, or None."""
+    key = tuple(sorted(float(x or 0) for x in spins))
+    for kind, spec in BOSONIC_VERTEX_TYPES.items():
+        if spec["spins"] == key:
+            return kind
+    return None
+
+
+def check_bosonic_vertex_type(vtype, spins, raw_type=None) -> None:
+    """Refuse a type name that no bosonic configuration accepts.
+
+    The message names both branches on purpose. Listing only the keys valid
+    for the declared spins steers the caller toward renaming, and a rename
+    yields the other vertex -- which is the failure this check exists to
+    prevent, reintroduced by the caller in good faith. So it states that the
+    available types follow from the declared spins, and gives the fermionic
+    configurations' keys for the case where the spins are what is wrong.
+    """
+    kind = _bosonic_kind_for_spins(spins)
+    if kind is None:
+        return
+    accepted = {_normalize_vtype_static(sp)
+                for sp in BOSONIC_VERTEX_TYPES[kind]["spellings"]}
+    # Names already closed for the fermionic bilinears stay acceptable here:
+    # they are in circulation for bosonic vertices via the `-3pt` spellings.
+    for _k, table, _sp in _TABLE_STRUCTURES:
+        accepted |= set(table)
+        accepted |= {_normalize_vtype_static(sp)
+                     for spec in table.values() for sp in spec["spellings"]}
+    base = _normalize_vtype_static(vtype)
+    if base in accepted:
+        return
+    shown = raw_type or vtype
+    valid = ", ".join(sorted(BOSONIC_VERTEX_TYPES[kind]["spellings"]))
+    # Give each fermionic configuration's own keys: a caller refused here
+    # usually wanted one of them, and the next thing they need is its name.
+    by_kind = {k: t for k, t, _sp in _TABLE_STRUCTURES}
+    alt_lines = []
+    for k, sp in _FERMIONIC_HINT:
+        table = by_kind.get(k, {})
+        names = ", ".join(sorted({sp2 for spec in table.values()
+                                  for sp2 in spec["spellings"]}))
+        alt_lines.append(
+            f"    {k}, spins ({', '.join('%g' % x for x in sp)}): {names}")
+    alt = "\n" + "\n".join(alt_lines)
+    raise UnknownVertexType(
+        f"unknown {kind} vertex type {shown!r} for spins "
+        f"({', '.join('%g' % x for x in sorted(float(s or 0) for s in spins))})."
+        f" Valid types for this spin configuration: {valid}.\n"
+        f"- The available types are determined by the declared spins. If the "
+        f"spins are correct, choose one of the names above.\n"
+        f"- If a fermionic vertex was intended, the spins need changing:"
+        f"{alt}\n"
+        f"  A Dirac fermion is spin 0.5, a massive vector 1, a scalar 0."
+    )
+
+
 class ProcessType(Enum):
     """Classification of the scattering / decay process."""
     DECAY_1TO2 = auto()            # 1 initial, 2 final, 0 propagators
@@ -704,7 +796,15 @@ class FeynCalcCodeGenerator:
                 result.warnings.append(
                     "generate_sum handles 2->2 scattering only; got a "
                     f"{self._classify_process(d).name} diagram. Decays are "
-                    "generated one at a time with generate()."
+                    "generated one at a time with generate().\n"
+                    "If the aim was to combine chiral pieces, DO NOT add them "
+                    "separately: the projectors act before the spinor "
+                    "contraction, so |M_L + M_R|^2 = |M_L|^2 + |M_R|^2 + "
+                    "2 Re(M_L M_R*) and summing the two widths drops the "
+                    "interference term. Use ONE diagram with a chiral vertex "
+                    'instead -- type "chiral", coupling {"gL": "<name>", '
+                    '"gR": "<name>"} -- which carries both projectors and '
+                    "their interference."
                 )
                 return result
             if isinstance(ch, str):
@@ -1113,6 +1213,8 @@ class FeynCalcCodeGenerator:
         spins = sorted([parent.spin or 0, d0.spin or 0, d1.spin or 0])
         if vertex is not None:
             check_vertex_structure(vertex.type, spins, raw_type=vertex.type)
+            check_bosonic_vertex_type(vertex.type, spins,
+                                      raw_type=vertex.type)
         self._last_spin_sets = [tuple(spins)]
 
         if spins == [0, 0, 0]:
